@@ -1,0 +1,58 @@
+# Learning.MD — Blindspot
+> AGENT: add an entry whenever the basic flow changes, the user reports a bug or gives
+> corrective feedback, or something took real time to figure out. CHECK THIS FILE FIRST
+> before debugging — the answer may already be here. Plain language; first use of any
+> technical term gets a one-line bracket explanation.
+
+<!-- Newest first. Entry format: -->
+
+## 2026-07-16 — FMEA: golden-set endpoints leaked across tenants (IDOR)
+**What happened:** FMEA (on feature-complete) found the golden-set/example/trace endpoints resolved by
+`:id` with **no project ownership check** — any project could read/edit/delete another's golden data by id.
+**Root cause:** only the recommendations endpoints checked ownership; the golden router trusted the id.
+**Fix:** added `goldenSetProjectId` / `goldenExampleProjectId` / `traceProjectId` (join id → route → project)
+in `packages/core/src/golden/service.ts`; every id-based golden handler now 404s if the resource isn't the
+caller's. Verified: Project B → 404 on Project A's set.
+**Watch for later:** EVERY new `/:id` endpoint must scope by `c.get("projectId")` — never trust an id alone.
+
+## 2026-07-16 — Eval scores implausibly low; stronger model scored lower than weaker
+**What happened:** back-testing gave avg scores ~0.13–0.27, and Groq 70B scored *below* Groq 8B.
+Judge, tested in isolation, was perfect (good summary → 0.9, irrelevant text → 0.0).
+**Root cause:** the **Golden Set Agent generated `input` as a bare passage** (no instruction). `runEval`
+sends `messages: [{ role: "user", content: example.input }]` with no system prompt, so the candidate
+never learns it should *summarize* — it just replies conversationally, which the judge (correctly) scores
+near zero. Not a judge bug — a **golden-data bug**: inputs must be self-contained task prompts.
+**Fix:** agent prompt now requires each `input` to embed the instruction (e.g. "Summarize the following…:
+<passage>"), matching how a real app / promoted trace looks.
+**Watch for later:** `promoteTrace` currently keeps only the last user message — if an app relied on a
+system prompt, the promoted golden input would also lose the instruction. Preserve full messages there
+(future). If eval scores look uniformly low, check whether golden `input`s are self-contained.
+
+## 2026-07-16 — DATABASE_URL must live in `.env`, not `.env.example`
+**What happened:** a real Supabase `DATABASE_URL` (with password) was written into `.env.example`.
+**Root cause:** `.env.example` is the committed, blank template; the app loads secrets from `.env` only
+(`loadRootEnv` in `packages/shared/src/env.ts` finds `pnpm-workspace.yaml` then loads the sibling `.env`).
+A value in `.env.example` is (a) ignored by the app and (b) a credential leak once committed.
+**Watch for later:** if `db:push`/bootstrap can't connect but you "set" DATABASE_URL, check it's in `.env`.
+Keep `.env.example` blank; never commit real secrets.
+
+## 2026-07-16 — Worker typecheck failed: duplicate ioredis (bullmq pins exact)
+**What happened:** `pnpm typecheck` failed in `apps/worker` — `Type 'Redis' is not assignable to
+type 'ConnectionOptions'`, complaining across `ioredis@5.11.1` vs `ioredis@5.10.1`.
+**Root cause:** `bullmq` depends on **exactly `ioredis@5.10.1`**, but the worker declared
+`ioredis@^5.4.2` which resolved to `5.11.1`. Two copies → two nominally-different `Redis` classes
+(ioredis uses `protected` members, which are compared nominally), so passing our `IORedis` instance
+into BullMQ's `Worker({ connection })` was a type mismatch. Not a code bug — a version-dedupe bug.
+**Fix:** pin the worker's `ioredis` to `5.10.1` (match bullmq) so pnpm installs one shared copy.
+**Watch for later:** any BullMQ upgrade may re-pin ioredis; if this type error returns, re-check
+`node_modules/.pnpm/bullmq@*/.../package.json` → `dependencies.ioredis` and match it (or add a root
+`pnpm.overrides` for ioredis).
+
+## 2026-07-16 — Project kickoff & naming standardization
+**What happened:** Blindspot began from a PRD that still carried residual `evaldrift` naming
+(`ed_live_…` API keys, `ed_` framing) from an earlier design. User approved standardizing to
+**Blindspot / `bs_`** everywhere.
+**Root cause:** the product was renamed evaldrift → Blindspot; only the wordmark was meant to
+change, but identifiers lagged.
+**Watch for later:** if you see `ed_` / `evaldrift` in generated code or the DB schema, it is a
+leak — rename to `bs_` / Blindspot. Project-issued gateway keys are `bs_live_…`.

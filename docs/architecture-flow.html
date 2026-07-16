@@ -1,0 +1,225 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Architecture Flow</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:0 auto;padding:24px 20px 80px;color:#1f2937;background:#fafafa}
+ h1{border-bottom:2px solid #e5e7eb;padding-bottom:8px}
+ h2{margin-top:36px;border-top:1px solid #e5e7eb;padding-top:18px;color:#111827}
+ pre.mermaid{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:14px 0 28px;overflow:auto;text-align:center}
+ .hint{position:sticky;top:0;background:#fff8e1;border:1px solid #f0d264;border-radius:6px;padding:8px 12px;font-size:13px;color:#5a4a00;margin-bottom:16px}
+ .mermaid svg{max-width:100%;height:auto}
+</style></head><body>
+<div class="hint">Tip: use Ctrl/Cmd + scroll or browser zoom to enlarge a diagram.</div>
+<h1>Architecture Flow</h1>
+<h2>Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate</h2>
+<pre class="mermaid">%% Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate
+%% intended — not yet built (authored at architecture approval; update as code lands)
+flowchart TD
+  A["User agent call&lt;br/&gt;ENTRY · base_url points to gateway, model = route:name"]:::term
+  B["Resolve route to approved live_model&lt;br/&gt;FUNCTION&lt;br/&gt;in: route:name · out: concrete model_ref"]:::fn
+  C{"Route exists?&lt;br/&gt;FUNCTION"}:::dec
+  D["Auto-create route with default policy&lt;br/&gt;FUNCTION · out: routes row"]:::fn
+  E["Decrypt user provider key&lt;br/&gt;FUNCTION · AES-256-GCM&lt;br/&gt;in: provider_keys.encrypted_key · out: in-memory key"]:::fn
+  F["Live LLM call through user key&lt;br/&gt;LIBRARY · Vercel AI SDK adapter&lt;br/&gt;in: prompt + model_ref · out: completion"]:::data
+  G["Write trace&lt;br/&gt;DATA · traces · cost, latency, output"]:::data
+  H["Enqueue eval run, async&lt;br/&gt;LIBRARY · BullMQ on Redis"]:::data
+  I["Judge scores golden set&lt;br/&gt;AGENT · JUDGE_MODEL&lt;br/&gt;in: outputs vs golden_examples · out: per-criterion scores"]:::agent
+  J["Aggregate avg_score, cost, latency&lt;br/&gt;FUNCTION · writes DATA · eval_runs"]:::fn
+  K{"Drift? new score below route band&lt;br/&gt;FUNCTION · new below old minus margin"}:::dec
+  L{"Policy: cheaper candidate at or above bar?&lt;br/&gt;FUNCTION · cheapest with score at or above 0.85"}:::dec
+  M["Create Recommendation with evidence&lt;br/&gt;FUNCTION · per-criterion scores, cost and latency delta, 3 side-by-side samples&lt;br/&gt;DATA · recommendations status = pending"]:::fn
+  N["Approvals inbox&lt;br/&gt;DATA · recommendations"]:::data
+  O{"User decision&lt;br/&gt;USER · approve or reject"}:::ask
+  P["Apply: update routes.live_model&lt;br/&gt;FUNCTION · drift auto-revert ONLY if route.auto_approve"]:::fn
+  Q["Store rejection reason, tunes future recs&lt;br/&gt;FUNCTION · DATA · recommendations status = rejected"]:::fn
+  R["CI Gate endpoint&lt;br/&gt;FUNCTION · blocks a regressing change&lt;br/&gt;in: candidate eval vs bar · out: pass or fail"]:::fn
+
+  A --&gt; B --&gt; C
+  C -- "no" --&gt; D --&gt; E
+  C -- "yes" --&gt; E
+  E --&gt; F --&gt; G
+  F --&gt; H --&gt; I --&gt; J
+  J --&gt; K
+  J --&gt; L
+  K -- "yes, quality dropped" --&gt; M
+  L -- "yes, cheaper passes" --&gt; M
+  M --&gt; N --&gt; O
+  O -- "approve" --&gt; P
+  O -- "reject" --&gt; Q
+  R -.-&gt; L
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+</pre>
+<h2>Blindspot — BUILD DECISIONS LOG (not a runtime flow)</h2>
+<pre class="mermaid">%% Blindspot — BUILD DECISIONS LOG (not a runtime flow)
+%% Records WHAT was chosen at each phase and WHY. Updated every phase; newest at bottom.
+flowchart TD
+  P0["Phase 0 · Monorepo skeleton — DONE"]:::done
+  P0c["pnpm + Turborepo · Hono gateway · tsx dev · internal packages export raw .ts&lt;br/&gt;WHY: one toolchain, no dev build step, instant HMR; Hono is tiny and edge-portable so the&lt;br/&gt;gateway can later run as N stateless instances (PRD §8)"]:::why
+  P0d["Worker: BullMQ on Redis, runs in-process for local dev until Phase 8&lt;br/&gt;WHY: keep the queue interface from day one so nothing changes later, but no second process to run yet"]:::why
+
+  P05["Phase 0.5 · Postgres schema — DONE"]:::done
+  P05c["Drizzle pg-core · uuid PKs · jsonb for policy_json + evidence_json · pgEnum for statuses&lt;br/&gt;WHY: typed SQL where one schema file drives BOTH migrations and TS types; jsonb keeps&lt;br/&gt;policy/evidence flexible without a migration per tweak"]:::why
+  P05d["Zod lives in packages/shared as the SINGLE source of truth; db imports the inferred types&lt;br/&gt;WHY: gateway validates requests + db shapes rows from the SAME definitions (no drift)"]:::why
+  P05e["Added api_keys (hash + shown-once prefix) beyond §9&lt;br/&gt;WHY: the gateway must map an incoming bs_live_ key → project; never store raw keys"]:::why
+
+  P1["Phase 1 · Gateway routing + adapters + trace — DONE"]:::done
+  P1a["OpenAI-compatible POST /v1/chat/completions; model = route:name&lt;br/&gt;WHY: users just repoint base_url + swap the model string — zero SDK change to adopt (PRD §4)"]:::why
+  P1b["Auth: bs_live_ key → sha256 hash lookup → project; raw key shown once at bootstrap&lt;br/&gt;WHY: a leaked DB never exposes usable keys; standard API-key hygiene"]:::why
+  P1c["BYO provider keys AES-256-GCM at rest; decrypted in-memory per call only&lt;br/&gt;WHY: PRD §5 non-negotiable — user controls spend, zero markup, keys never logged"]:::why
+  P1d["Adapters via Vercel AI SDK v4 — anthropic/openai/google/groq native, HF via OpenAI-compatible baseURL&lt;br/&gt;WHY: one interface for every provider (PRD stack); adding a provider = one switch case"]:::why
+  P1e["Auto-create route from traffic, seed default model as first candidate; NEVER switch an existing&lt;br/&gt;route's live model here&lt;br/&gt;WHY: routes appear automatically (PRD §4 step 2); swaps are approval-gated only (§3)"]:::why
+  P1f["Trace every call: cost (cents) · latency · output&lt;br/&gt;WHY: this is the Observe step; every later eval/drig decision reads these rows (PRD §6)"]:::why
+
+  P2["Phase 2 · Golden sets (upload + agent) — DONE"]:::done
+  P2a["New @blindspot/core package holds domain services (golden, later eval/policy)&lt;br/&gt;WHY: gateway + worker + dashboard all reuse ONE implementation, no logic in HTTP handlers"]:::why
+  P2b["Seed two ways: upload CSV/JSONL (csv-parse + Zod) OR Golden Set Agent via generateObject&lt;br/&gt;WHY: PRD §7 upload-optional — schema-validated agent output means no brittle JSON parsing"]:::why
+  P2c["Versioned sets (nextVersion), full CRUD, promote-a-trace; grow-from-production deferred&lt;br/&gt;WHY: score history stays comparable across versions; curate is the human-in-the-loop control"]:::why
+
+  P3["Phase 3 · Eval engine (LLM-as-judge) — DONE"]:::done
+  P3a["judgeOutput via generateObject (schema-validated verdict); runEval scores every active&lt;br/&gt;golden example then persists an eval_runs row&lt;br/&gt;WHY: reproducible, structured scores; the aggregate row is what policy + drift read"]:::why
+  P3b["enqueueEval: BullMQ when REDIS_URL is set, else run inline&lt;br/&gt;WHY: PRD §8 decouples eval to workers, but the loop stays demoable with no Redis in dev"]:::why
+
+  P4["Phase 4 · Recommendations + approvals — DONE"]:::done
+  P4a["Policy = cheapest candidate with latest score &gt;= bar AND cheaper than live; emits a&lt;br/&gt;Recommendation with evidence (scores + cost/latency deltas)&lt;br/&gt;WHY: PRD §3 — evidence-backed proposal, dedup pending recs per target"]:::why
+  P4b["Approve → routes.live_model switches; Reject → status + reason stored; auto_approve (default OFF)&lt;br/&gt;applies within-band+cheaper swaps automatically, still logged&lt;br/&gt;WHY: §3 non-negotiable — no silent swap; reason tunes future recs"]:::why
+  P4c["KNOWN GAP: evidence.samples + perCriterion are empty (need per-example output storage)&lt;br/&gt;WHY: deferred to Phase 4.5 — scores + deltas carry the rec for now"]:::todo
+
+  P3fix["🐞 FIX (found via live smoke test): eval scores were ~0.15 because the Golden Set Agent&lt;br/&gt;emitted BARE passages; runEval sent them with no instruction so candidates never did the task&lt;br/&gt;WHY the fix: golden inputs must be SELF-CONTAINED prompts (instruction embedded) — matches a&lt;br/&gt;real app call / promoted trace. After fix: 8B 0.16 → 0.89, and an approved swap flipped the live model"]:::why
+
+  P5["Phase 5 · Drift + CI gate — DONE"]:::done
+  P5a["checkDrift: re-eval (or simulated version-bump score) vs prior; if below margin or bar →&lt;br/&gt;drift_event + recovery recommendation (mode=drift picks best passing, cost secondary)&lt;br/&gt;WHY: PRD §5 — quality regressions surface as approval-gated recs, never silent reverts"]:::why
+  P5b["CI gate: POST /gate re-evals a model → 200 if score &gt;= bar, 422 if it regresses (CI fails)&lt;br/&gt;WHY: a regressing model/prompt change can't reach prod (PRD §5)"]:::why
+
+  DONE["✅ Backend loop VERIFIED LIVE end-to-end (Groq + live Postgres):&lt;br/&gt;connect → route → trace → golden(agent) → eval(judge) → recommend → approve → live swap;&lt;br/&gt;drift detected; gate blocked a sub-bar model with 422"]:::done
+  P7["Phase 7 · Dashboard (Next.js §10) — NEXT"]:::wip
+
+  P0 --&gt; P0c --&gt; P0d --&gt; P05
+  P05 --&gt; P05c --&gt; P05d --&gt; P05e --&gt; P1
+  P1 --&gt; P1a --&gt; P1b --&gt; P1c --&gt; P1d --&gt; P1e --&gt; P1f --&gt; P2
+  P2 --&gt; P2a --&gt; P2b --&gt; P2c --&gt; P3
+  P3 --&gt; P3a --&gt; P3b --&gt; P3fix --&gt; P4
+  P4 --&gt; P4a --&gt; P4b --&gt; P4c --&gt; P5
+  P5 --&gt; P5a --&gt; P5b --&gt; DONE --&gt; P7
+
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef wip fill:#fef9c3,stroke:#ca8a04,color:#3f2d00;
+  classDef todo fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef why fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+</pre>
+<h2>Blindspot — golden-set lifecycle (PRD §7): seed -&gt; grow -&gt; curate</h2>
+<pre class="mermaid">%% Blindspot — golden-set lifecycle (PRD §7): seed -&gt; grow -&gt; curate
+%% grow-from-production step is intended, not yet built
+flowchart TD
+  S{"Seed path?&lt;br/&gt;USER chooses"}:::dec
+  U["Parse upload CSV or JSONL&lt;br/&gt;FUNCTION · csv-parse&lt;br/&gt;in: file text · out: rows"]:::fn
+  UV["Validate rows&lt;br/&gt;FUNCTION · Zod GoldenExampleInput&lt;br/&gt;out: examples or row-level error"]:::fn
+  A["Golden Set Agent&lt;br/&gt;AGENT · GOLDEN_MODEL or JUDGE_MODEL&lt;br/&gt;in: task description plus sample inputs · out: input + referenceOutput + rubric xN"]:::agent
+  AV["Schema-validate via generateObject&lt;br/&gt;FUNCTION · Zod GeneratedGolden"]:::fn
+  NV["nextVersion(routeId)&lt;br/&gt;FUNCTION · max(version) + 1"]:::fn
+  C["createGoldenSet + insert examples&lt;br/&gt;DATA · golden_sets (origin) and golden_examples"]:::data
+  CUR["Curate: add / edit / delete / label / active&lt;br/&gt;FUNCTION · CRUD on golden_examples"]:::fn
+  PT["Promote a trace&lt;br/&gt;FUNCTION · reads traces then addExample&lt;br/&gt;input = last user msg, referenceOutput = trace output"]:::fn
+  G["planned: Grow from production&lt;br/&gt;AGENT · propose judge-uncertain / drift / diverse candidates&lt;br/&gt;into a suggested-additions queue, USER accepts"]:::todo
+
+  S -- "upload" --&gt; U --&gt; UV --&gt; NV
+  S -- "no upload" --&gt; A --&gt; AV --&gt; NV
+  NV --&gt; C --&gt; CUR
+  C --&gt; PT --&gt; CUR
+  C -.-&gt; G -.-&gt; CUR
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  classDef todo fill:#e5e7eb,stroke:#6b7280,color:#111827;
+</pre>
+<h2>Blindspot — eval + recommend (PRD §3, §6): back-test a candidate then propose a swap</h2>
+<pre class="mermaid">%% Blindspot — eval + recommend (PRD §3, §6): back-test a candidate then propose a swap
+flowchart TD
+  T["Trigger&lt;br/&gt;FUNCTION · add candidate OR run eval OR (Phase 5) version bump"]:::fn
+  Q{"REDIS_URL set?&lt;br/&gt;FUNCTION"}:::dec
+  EN["Enqueue eval job&lt;br/&gt;DATA · BullMQ bs:evals"]:::data
+  IN["Run inline (dev)&lt;br/&gt;FUNCTION"]:::fn
+  RUN["runEval: for each active golden example&lt;br/&gt;FUNCTION · loop"]:::fn
+  CAND["Candidate output&lt;br/&gt;AGENT · candidate model via user key&lt;br/&gt;in: example.input · out: text + tokens + latency"]:::agent
+  JUDGE["Judge score&lt;br/&gt;AGENT · JUDGE_MODEL via generateObject&lt;br/&gt;in: output vs reference + rubric · out: score 0..1"]:::agent
+  AGG["Aggregate avg_score, latency, cost&lt;br/&gt;FUNCTION · write DATA · eval_runs"]:::data
+  POL{"Policy: cheapest passing candidate cheaper than live?&lt;br/&gt;FUNCTION · score &gt;= route.policy.minScore"}:::dec
+  DUP{"Pending rec already exists for this target?&lt;br/&gt;FUNCTION"}:::dec
+  REC["Create Recommendation + evidence&lt;br/&gt;DATA · recommendations status = pending&lt;br/&gt;fromScore/toScore + cost &amp; latency delta"]:::data
+  AUTO{"route.auto_approve ON?&lt;br/&gt;FUNCTION · default OFF"}:::dec
+  APPLY["Apply swap: update routes.live_model&lt;br/&gt;FUNCTION · logged"]:::fn
+  INBOX["Approvals inbox — USER approve or reject&lt;br/&gt;USER · approve applies swap, reject stores reason"]:::ask
+  STOP["No recommendation&lt;br/&gt;FUNCTION · none warranted"]:::term
+
+  T --&gt; Q
+  Q -- "yes" --&gt; EN --&gt; RUN
+  Q -- "no" --&gt; IN --&gt; RUN
+  RUN --&gt; CAND --&gt; JUDGE --&gt; AGG --&gt; POL
+  POL -- "no" --&gt; STOP
+  POL -- "yes" --&gt; DUP
+  DUP -- "yes" --&gt; STOP
+  DUP -- "no" --&gt; REC --&gt; AUTO
+  AUTO -- "yes" --&gt; APPLY
+  AUTO -- "no" --&gt; INBOX
+  INBOX -- "approve" --&gt; APPLY
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+</pre>
+<h2>Blindspot — drift detection + CI gate (PRD §5)</h2>
+<pre class="mermaid">%% Blindspot — drift detection + CI gate (PRD §5)
+flowchart TD
+  TR["Trigger&lt;br/&gt;FUNCTION · schedule OR provider version bump OR manual drift-check"]:::fn
+  RE{"Real re-eval or simulated bump?&lt;br/&gt;FUNCTION"}:::dec
+  EV["runEval on LIVE model&lt;br/&gt;AGENT+FUNCTION · candidate + judge over golden set · out: newScore"]:::agent
+  SIM["Inject simulated newScore&lt;br/&gt;FUNCTION · writes a synthetic eval_runs row"]:::fn
+  CMP{"Drift? newScore below (oldScore - margin) OR below policy bar&lt;br/&gt;FUNCTION · margin default 0.05"}:::dec
+  OK["No drift — done&lt;br/&gt;FUNCTION"]:::term
+  DE["Record drift_event&lt;br/&gt;DATA · drift_events (old/new score, action=recommended)"]:::data
+  REC["generateRecommendation mode=drift&lt;br/&gt;FUNCTION · best PASSING candidate != live (cost secondary)"]:::fn
+  HASC{"A passing candidate exists?&lt;br/&gt;FUNCTION"}:::dec
+  INBOX["Approval-gated recommendation → inbox&lt;br/&gt;USER · approve applies swap"]:::ask
+  NONE["drift_event only (no passing alternative yet)&lt;br/&gt;FUNCTION"]:::term
+
+  G["CI Gate · POST /routes/:name/gate&lt;br/&gt;FUNCTION · runEval(modelRef or live)"]:::fn
+  GC{"avgScore &gt;= policy bar?&lt;br/&gt;FUNCTION"}:::dec
+  PASS["200 pass:true — change may ship"]:::term
+  FAIL["422 pass:false — CI blocks the regressing change"]:::term
+
+  TR --&gt; RE
+  RE -- "real" --&gt; EV --&gt; CMP
+  RE -- "simulated" --&gt; SIM --&gt; CMP
+  CMP -- "no" --&gt; OK
+  CMP -- "yes" --&gt; DE --&gt; REC --&gt; HASC
+  HASC -- "yes" --&gt; INBOX
+  HASC -- "no" --&gt; NONE
+
+  G --&gt; GC
+  GC -- "yes" --&gt; PASS
+  GC -- "no" --&gt; FAIL
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+</pre>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad:false, securityLevel:"loose", theme:"base",
+  themeVariables:{ fontFamily:"-apple-system, Segoe UI, Roboto, sans-serif", fontSize:"14px" } });
+await mermaid.run({ querySelector:"pre.mermaid" });
+</script>
+</body></html>

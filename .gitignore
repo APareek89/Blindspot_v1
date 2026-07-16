@@ -1,0 +1,21 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds / caches
+.turbo/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# env (owned by the parallel secrets session — NEVER commit)
+.env
+.env.local
+.env.*.local
+
+# logs / os
+*.log
+.DS_Store

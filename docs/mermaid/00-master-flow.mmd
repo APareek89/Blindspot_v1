@@ -1,0 +1,42 @@
+%% Blindspot — master flow: Observe -> Eval -> Recommend -> Approve -> Route -> Gate
+%% intended — not yet built (authored at architecture approval; update as code lands)
+flowchart TD
+  A["User agent call<br/>ENTRY · base_url points to gateway, model = route:name"]:::term
+  B["Resolve route to approved live_model<br/>FUNCTION<br/>in: route:name · out: concrete model_ref"]:::fn
+  C{"Route exists?<br/>FUNCTION"}:::dec
+  D["Auto-create route with default policy<br/>FUNCTION · out: routes row"]:::fn
+  E["Decrypt user provider key<br/>FUNCTION · AES-256-GCM<br/>in: provider_keys.encrypted_key · out: in-memory key"]:::fn
+  F["Live LLM call through user key<br/>LIBRARY · Vercel AI SDK adapter<br/>in: prompt + model_ref · out: completion"]:::data
+  G["Write trace<br/>DATA · traces · cost, latency, output"]:::data
+  H["Enqueue eval run, async<br/>LIBRARY · BullMQ on Redis"]:::data
+  I["Judge scores golden set<br/>AGENT · JUDGE_MODEL<br/>in: outputs vs golden_examples · out: per-criterion scores"]:::agent
+  J["Aggregate avg_score, cost, latency<br/>FUNCTION · writes DATA · eval_runs"]:::fn
+  K{"Drift? new score below route band<br/>FUNCTION · new below old minus margin"}:::dec
+  L{"Policy: cheaper candidate at or above bar?<br/>FUNCTION · cheapest with score at or above 0.85"}:::dec
+  M["Create Recommendation with evidence<br/>FUNCTION · per-criterion scores, cost and latency delta, 3 side-by-side samples<br/>DATA · recommendations status = pending"]:::fn
+  N["Approvals inbox<br/>DATA · recommendations"]:::data
+  O{"User decision<br/>USER · approve or reject"}:::ask
+  P["Apply: update routes.live_model<br/>FUNCTION · drift auto-revert ONLY if route.auto_approve"]:::fn
+  Q["Store rejection reason, tunes future recs<br/>FUNCTION · DATA · recommendations status = rejected"]:::fn
+  R["CI Gate endpoint<br/>FUNCTION · blocks a regressing change<br/>in: candidate eval vs bar · out: pass or fail"]:::fn
+
+  A --> B --> C
+  C -- "no" --> D --> E
+  C -- "yes" --> E
+  E --> F --> G
+  F --> H --> I --> J
+  J --> K
+  J --> L
+  K -- "yes, quality dropped" --> M
+  L -- "yes, cheaper passes" --> M
+  M --> N --> O
+  O -- "approve" --> P
+  O -- "reject" --> Q
+  R -.-> L
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
