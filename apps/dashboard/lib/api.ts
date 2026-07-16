@@ -1,0 +1,173 @@
+// Typed, server-side client for the Blindspot /v1 gateway. Every call carries the
+// project's bs_live_ key as a bearer token. This module is only ever imported by
+// Server Components / Server Actions, so the key never reaches the browser.
+
+import type {
+  DriftEvent,
+  GatewayKey,
+  GoldenExample,
+  GoldenSet,
+  MintedKey,
+  Overview,
+  Project,
+  ProviderKey,
+  Recommendation,
+  RouteDetail,
+  RouteSummary,
+  Settings,
+  Trace,
+} from "./types";
+
+export const GATEWAY_URL = process.env.BLINDSPOT_GATEWAY_URL ?? "http://localhost:8787";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function req<T>(key: string, path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${GATEWAY_URL}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, `cannot reach the gateway at ${GATEWAY_URL}`);
+  }
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    throw new ApiError(res.status, data?.error?.message ?? res.statusText);
+  }
+  return data as T;
+}
+
+function qs(params: Record<string, string | number | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") p.set(k, String(v));
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
+export interface Page {
+  limit?: number;
+  offset?: number;
+}
+
+/** Build a typed client bound to one project key. */
+export function api(key: string) {
+  const get = <T>(path: string) => req<T>(key, path);
+  const send = <T>(method: string, path: string, body?: unknown) =>
+    req<T>(key, path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+
+  return {
+    // identity + summary
+    me: () => get<{ project: Project }>("/v1/me"),
+    overview: () => get<Overview>("/v1/overview"),
+    settings: () => get<Settings>("/v1/settings"),
+
+    // routes
+    listRoutes: (p: Page = {}) =>
+      get<{ routes: RouteSummary[]; total: number }>(
+        `/v1/routes${qs({ limit: p.limit, offset: p.offset })}`,
+      ),
+    getRoute: (name: string) => get<RouteDetail>(`/v1/routes/${encodeURIComponent(name)}`),
+    patchRoute: (name: string, body: { minScore?: number; autoApprove?: boolean }) =>
+      send<{ route: unknown }>("PATCH", `/v1/routes/${encodeURIComponent(name)}`, body),
+    addCandidate: (name: string, body: { modelRef: string; source?: string }) =>
+      send<unknown>("POST", `/v1/routes/${encodeURIComponent(name)}/candidates`, body),
+    removeCandidate: (name: string, modelRef: string) =>
+      send<{ ok: true }>(
+        "DELETE",
+        `/v1/routes/${encodeURIComponent(name)}/candidates/${encodeURIComponent(modelRef)}`,
+      ),
+
+    // traces
+    listTraces: (p: Page & { route?: string } = {}) =>
+      get<{ traces: Trace[]; limit: number; offset: number }>(
+        `/v1/traces${qs({ limit: p.limit, offset: p.offset, route: p.route })}`,
+      ),
+
+    // approvals
+    listRecommendations: (p: Page & { status?: string } = {}) =>
+      get<{ recommendations: Recommendation[] }>(
+        `/v1/recommendations${qs({ limit: p.limit, offset: p.offset, status: p.status })}`,
+      ),
+    recommend: (name: string) =>
+      send<{ recommendation: Recommendation | null; note?: string }>(
+        "POST",
+        `/v1/routes/${encodeURIComponent(name)}/recommend`,
+      ),
+    approve: (id: string) =>
+      send<{ recommendation: Recommendation }>("POST", `/v1/recommendations/${id}/approve`),
+    reject: (id: string, reason?: string) =>
+      send<{ recommendation: Recommendation }>("POST", `/v1/recommendations/${id}/reject`, {
+        reason,
+      }),
+
+    // eval
+    runEval: (name: string, modelRef?: string) =>
+      send<unknown>("POST", `/v1/routes/${encodeURIComponent(name)}/eval`, { modelRef }),
+
+    // drift + gate
+    driftEvents: (p: Page = {}) =>
+      get<{ drift_events: DriftEvent[] }>(
+        `/v1/drift-events${qs({ limit: p.limit, offset: p.offset })}`,
+      ),
+    driftCheck: (name: string, body: { simulateNewScore?: number; margin?: number }) =>
+      send<unknown>("POST", `/v1/routes/${encodeURIComponent(name)}/drift-check`, body),
+
+    // golden sets
+    listGoldenSets: (name: string) =>
+      get<{ golden_sets: GoldenSet[] }>(`/v1/routes/${encodeURIComponent(name)}/golden-sets`),
+    listExamples: (setId: string) =>
+      get<{ examples: GoldenExample[] }>(`/v1/golden-sets/${setId}/examples`),
+    uploadGolden: (name: string, body: { format: "csv" | "jsonl"; data: string }) =>
+      send<{ golden_set: GoldenSet; count: number }>(
+        "POST",
+        `/v1/routes/${encodeURIComponent(name)}/golden-sets/upload`,
+        body,
+      ),
+    generateGolden: (name: string, body: { taskDescription?: string; count?: number }) =>
+      send<{ golden_set: GoldenSet; count: number }>(
+        "POST",
+        `/v1/routes/${encodeURIComponent(name)}/golden-sets/generate`,
+        body,
+      ),
+    addExample: (
+      setId: string,
+      body: { input: string; referenceOutput?: string | null; rubric?: string | null; label?: string },
+    ) => send<{ example: GoldenExample }>("POST", `/v1/golden-sets/${setId}/examples`, body),
+    updateExample: (
+      exId: string,
+      body: Partial<{ input: string; referenceOutput: string | null; rubric: string | null; label: string; active: boolean }>,
+    ) => send<{ example: GoldenExample }>("PATCH", `/v1/golden-examples/${exId}`, body),
+    deleteExample: (exId: string) => send<{ ok: true }>("DELETE", `/v1/golden-examples/${exId}`),
+    promoteTrace: (setId: string, traceId: string) =>
+      send<{ example: GoldenExample }>("POST", `/v1/golden-sets/${setId}/promote-trace`, {
+        traceId,
+      }),
+
+    // keys
+    listGatewayKeys: () => get<{ keys: GatewayKey[] }>("/v1/keys"),
+    createGatewayKey: () => send<{ key: MintedKey }>("POST", "/v1/keys"),
+    listProviderKeys: () => get<{ provider_keys: ProviderKey[] }>("/v1/provider-keys"),
+    setProviderKey: (provider: string, value: string) =>
+      send<{ provider_key: ProviderKey }>("PUT", `/v1/provider-keys/${provider}`, { value }),
+    deleteProviderKey: (provider: string) =>
+      send<{ ok: true }>("DELETE", `/v1/provider-keys/${provider}`),
+  };
+}
+
+export type Client = ReturnType<typeof api>;

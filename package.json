@@ -11,7 +11,8 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "start:gateway": "pnpm --filter @blindspot/gateway dev",
-    "start:worker": "pnpm --filter @blindspot/worker dev"
+    "start:worker": "pnpm --filter @blindspot/worker dev",
+    "start:dashboard": "pnpm --filter @blindspot/dashboard dev"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
