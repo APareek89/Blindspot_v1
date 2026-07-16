@@ -64,25 +64,29 @@ export async function createGoldenSet(opts: {
 }) {
   const db = getDb();
   const version = await nextVersion(opts.routeId);
-  const gs = (
-    await db
-      .insert(goldenSets)
-      .values({ routeId: opts.routeId, version, origin: opts.origin })
-      .returning()
-  )[0]!;
+  // FMEA P2: the set row and its examples must land atomically — a failed examples
+  // insert must not leave an empty golden-set version behind.
+  return db.transaction(async (tx) => {
+    const gs = (
+      await tx
+        .insert(goldenSets)
+        .values({ routeId: opts.routeId, version, origin: opts.origin })
+        .returning()
+    )[0]!;
 
-  if (opts.examples.length > 0) {
-    await db.insert(goldenExamples).values(
-      opts.examples.map((e) => ({
-        goldenSetId: gs.id,
-        input: e.input,
-        referenceOutput: e.referenceOutput ?? null,
-        rubric: e.rubric ?? null,
-        label: e.label,
-      })),
-    );
-  }
-  return gs;
+    if (opts.examples.length > 0) {
+      await tx.insert(goldenExamples).values(
+        opts.examples.map((e) => ({
+          goldenSetId: gs.id,
+          input: e.input,
+          referenceOutput: e.referenceOutput ?? null,
+          rubric: e.rubric ?? null,
+          label: e.label,
+        })),
+      );
+    }
+    return gs;
+  });
 }
 
 export async function listGoldenSets(routeId: string) {

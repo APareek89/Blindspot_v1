@@ -20,6 +20,14 @@ import type {
 
 export const GATEWAY_URL = process.env.BLINDSPOT_GATEWAY_URL ?? "http://localhost:8787";
 
+// FMEA P2 (config drift): defaulting to localhost in production almost always means a
+// missing env var — the whole dashboard would show "gateway down". Make it loud.
+if (!process.env.BLINDSPOT_GATEWAY_URL && process.env.NODE_ENV === "production") {
+  console.warn(
+    "[dashboard] BLINDSPOT_GATEWAY_URL is not set — defaulting to http://localhost:8787 in production.",
+  );
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -46,9 +54,18 @@ async function req<T>(key: string, path: string, init?: RequestInit): Promise<T>
     throw new ApiError(0, `cannot reach the gateway at ${GATEWAY_URL}`);
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: unknown = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // gateway returned non-JSON (proxy error page, crash, HTML) — don't blow up JSON.parse
+      throw new ApiError(res.status, `gateway returned a non-JSON response (${res.status})`);
+    }
+  }
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error?.message ?? res.statusText);
+    const msg = (data as { error?: { message?: string } })?.error?.message ?? res.statusText;
+    throw new ApiError(res.status, msg);
   }
   return data as T;
 }

@@ -38,8 +38,8 @@ export function ms(n: number | null | undefined): string {
 
 export function signedMs(n: number | null | undefined): string {
   if (n == null) return "—";
-  const s = n > 0 ? "+" : "";
-  return `${s}${ms(Math.abs(n))}`.replace("+-", "+");
+  const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+  return `${sign}${ms(Math.abs(n))}`;
 }
 
 /** Split "provider:model" into a short label + provider. */
