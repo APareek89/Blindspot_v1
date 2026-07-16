@@ -1,13 +1,11 @@
-import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
+import { hashGatewayKey } from "@blindspot/core";
 import { apiKeys, getDb } from "@blindspot/db";
 import type { Env } from "./types";
 
-/** Gateway keys are stored only as a sha256 hash — never in plaintext. */
-export function hashKey(raw: string): string {
-  return createHash("sha256").update(raw).digest("hex");
-}
+/** Gateway keys are stored only as a sha256 hash — never in plaintext (core is the source). */
+export const hashKey = hashGatewayKey;
 
 /** Resolve a bearer key (bs_live_…) to its project id, or null if unknown. */
 export async function projectIdForKey(raw: string): Promise<string | null> {

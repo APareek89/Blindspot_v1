@@ -1,5 +1,10 @@
 import { parse } from "csv-parse/sync";
-import { GoldenExampleInputSchema, type GoldenExampleInput } from "@blindspot/shared";
+import {
+  GoldenExampleInputSchema,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_EXAMPLES,
+  type GoldenExampleInput,
+} from "@blindspot/shared";
 
 export type UploadFormat = "csv" | "jsonl";
 
@@ -7,11 +12,20 @@ export type UploadFormat = "csv" | "jsonl";
  * Parse + validate a golden-set upload (PRD §7 seed path).
  * CSV columns / JSONL keys: `input` (required), `reference_output`, `rubric`, `label`.
  * Throws a readable error on the first invalid row so the UI can show a preview.
+ * FMEA P2: rejects payloads over {@link MAX_UPLOAD_BYTES} or {@link MAX_UPLOAD_EXAMPLES}
+ * so one upload can't exhaust memory or flood a route.
  */
 export function parseGoldenUpload(
   format: UploadFormat,
   data: string,
 ): GoldenExampleInput[] {
+  const bytes = Buffer.byteLength(data, "utf8");
+  if (bytes > MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `upload is ${(bytes / 1e6).toFixed(2)} MB — max is ${(MAX_UPLOAD_BYTES / 1e6).toFixed(0)} MB`,
+    );
+  }
+
   const rows: unknown[] =
     format === "csv"
       ? (parse(data, { columns: true, skip_empty_lines: true, trim: true }) as unknown[])
@@ -25,6 +39,12 @@ export function parseGoldenUpload(
               throw new Error(`JSONL parse error on line ${i + 1}`);
             }
           });
+
+  if (rows.length > MAX_UPLOAD_EXAMPLES) {
+    throw new Error(
+      `upload has ${rows.length} rows — max is ${MAX_UPLOAD_EXAMPLES} per upload`,
+    );
+  }
 
   return rows.map((raw, i) => {
     const row = (raw ?? {}) as Record<string, unknown>;

@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueEval, generateRecommendation, type EnqueueResult } from "@blindspot/core";
 import { candidates, evalRuns, getDb } from "@blindspot/db";
+import { clampPagination } from "@blindspot/shared";
 import { getRouteByName } from "../route-resolver";
 import type { Env } from "../types";
 
@@ -76,10 +77,13 @@ evalRouter.post("/routes/:name/eval", async (c) => {
 evalRouter.get("/routes/:name/eval-runs", async (c) => {
   const route = await getRouteByName(c.get("projectId"), c.req.param("name"));
   if (!route) return c.json({ error: { message: "route not found" } }, 404);
+  const { limit, offset } = clampPagination(c.req.query("limit"), c.req.query("offset"));
   const rows = await getDb()
     .select()
     .from(evalRuns)
     .where(eq(evalRuns.routeId, route.id))
-    .orderBy(desc(evalRuns.createdAt));
+    .orderBy(desc(evalRuns.createdAt))
+    .limit(limit)
+    .offset(offset);
   return c.json({ eval_runs: rows });
 });

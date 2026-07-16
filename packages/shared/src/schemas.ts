@@ -98,6 +98,23 @@ export const JudgeVerdictSchema = z.object({
 });
 export type JudgeVerdict = z.infer<typeof JudgeVerdictSchema>;
 
+/** Edit a route's policy bar and/or per-route auto-approve toggle (PRD §10 route detail). */
+export const RoutePatchSchema = z
+  .object({
+    minScore: z.number().min(0).max(1).optional(),
+    autoApprove: z.boolean().optional(),
+  })
+  .refine((v) => v.minScore !== undefined || v.autoApprove !== undefined, {
+    message: "provide minScore and/or autoApprove",
+  });
+export type RoutePatch = z.infer<typeof RoutePatchSchema>;
+
+/** Set a project's BYO provider key (value is encrypted at rest; never echoed back). */
+export const ProviderKeyInputSchema = z.object({
+  value: z.string().min(1),
+});
+export type ProviderKeyInput = z.infer<typeof ProviderKeyInputSchema>;
+
 /** Partial edit to a golden example (curate step, PRD §7). */
 export const GoldenExamplePatchSchema = z.object({
   input: z.string().min(1).optional(),

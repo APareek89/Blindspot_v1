@@ -27,6 +27,8 @@ approvals.get("/recommendations", async (c) => {
     recommendations: await listRecommendations({
       projectId: c.get("projectId"),
       status: valid ? status : undefined,
+      limit: c.req.query("limit"),
+      offset: c.req.query("offset"),
     }),
   });
 });

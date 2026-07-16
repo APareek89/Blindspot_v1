@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { getDb, traces } from "@blindspot/db";
+import { checkModelKeyConfig } from "@blindspot/core";
 import { parseModelRef, runChat } from "@blindspot/providers";
 import {
   ChatCompletionRequestSchema,
@@ -15,10 +16,19 @@ import { approvals } from "./manage/approvals";
 import { driftRouter } from "./manage/drift";
 import { evalRouter } from "./manage/eval";
 import { golden } from "./manage/golden";
+import { keysRouter } from "./manage/keys";
+import { metaRouter } from "./manage/meta";
+import { routesRouter } from "./manage/routes";
 import { resolveOrCreateRoute } from "./route-resolver";
 import type { Env } from "./types";
 
 loadRootEnv(import.meta.url);
+
+// FMEA P2 (config drift): warn at startup if a configured model has no key in env,
+// instead of failing silently at first traffic. Never crashes — warnings only.
+for (const w of checkModelKeyConfig()) {
+  console.warn(`[gateway] config warning: ${w.message}`);
+}
 
 const app = new Hono<Env>();
 
@@ -28,7 +38,10 @@ app.get("/healthz", (c) => c.json({ ok: true, service: "gateway" }));
 // Everything under /v1 requires a project key.
 app.use("/v1/*", requireProject);
 
-// Management surface (golden sets, candidates + evals, approvals, …).
+// Management surface (routes, golden sets, candidates + evals, approvals, keys, …).
+app.route("/v1", metaRouter);
+app.route("/v1", routesRouter);
+app.route("/v1", keysRouter);
 app.route("/v1", golden);
 app.route("/v1", evalRouter);
 app.route("/v1", approvals);

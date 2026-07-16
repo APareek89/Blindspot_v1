@@ -1,7 +1,7 @@
 import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { evalRuns, getDb, recommendations, routes } from "@blindspot/db";
 import { costPer1kCents } from "@blindspot/providers";
-import type { Evidence } from "@blindspot/shared";
+import { clampPagination, type Evidence } from "@blindspot/shared";
 
 const COST_UNKNOWN = Number.POSITIVE_INFINITY;
 
@@ -91,8 +91,12 @@ export async function generateRecommendation(
     samples: [],
   };
 
-  // per-route auto-approve (default OFF): within band + cheaper is already guaranteed
-  const autoApprove = route.autoApprove;
+  // Per-route auto-approve (default OFF, PRD §3): "within band AND cost decreases".
+  // In "cost" mode the candidate is always cheaper by construction, but "drift" mode
+  // picks the highest-scoring passing model regardless of price — which could be MORE
+  // expensive. Cost guard (FMEA P2): never auto-switch to a pricier model. If recovery
+  // needs a costlier model, fall back to a pending recommendation for human approval.
+  const autoApprove = route.autoApprove && costDeltaPct <= 0;
   const rec = (
     await db
       .insert(recommendations)
@@ -125,14 +129,34 @@ async function getOwnedRec(id: string, projectId: string) {
   return row.rec;
 }
 
-/** Approve → the route's live model switches to the recommended model (PRD §3). */
+/**
+ * Approve → the route's live model switches to the recommended model (PRD §3).
+ * FMEA P2: the status flip and the live-model swap run in ONE transaction, so we can
+ * never end up "approved" with the old live model still routing (or vice-versa).
+ */
 export async function approveRecommendation(id: string, projectId: string) {
   const db = getDb();
   const rec = await getOwnedRec(id, projectId);
   if (!rec) throw new Error("recommendation not found");
   if (rec.status !== "pending") throw new Error(`recommendation already ${rec.status}`);
-  await db.update(recommendations).set({ status: "approved" }).where(eq(recommendations.id, id));
-  await db.update(routes).set({ liveModel: rec.toModel }).where(eq(routes.id, rec.routeId));
+  await db.transaction(async (tx) => {
+    // re-check status inside the tx to close the approve/approve race
+    const current = (
+      await tx
+        .select({ status: recommendations.status })
+        .from(recommendations)
+        .where(eq(recommendations.id, id))
+        .limit(1)
+    )[0];
+    if (!current || current.status !== "pending") {
+      throw new Error(`recommendation already ${current?.status ?? "gone"}`);
+    }
+    await tx
+      .update(recommendations)
+      .set({ status: "approved" })
+      .where(eq(recommendations.id, id));
+    await tx.update(routes).set({ liveModel: rec.toModel }).where(eq(routes.id, rec.routeId));
+  });
   return { ...rec, status: "approved" as const };
 }
 
@@ -149,11 +173,14 @@ export async function rejectRecommendation(id: string, projectId: string, reason
   return { ...rec, status: "rejected" as const, reason: reason ?? null };
 }
 
-/** The Approvals inbox for a project (optionally filtered by status). */
+/** The Approvals inbox for a project (optionally filtered by status; paginated). */
 export async function listRecommendations(opts: {
   projectId: string;
   status?: "pending" | "approved" | "rejected";
+  limit?: string | number;
+  offset?: string | number;
 }) {
+  const { limit, offset } = clampPagination(opts.limit, opts.offset);
   const where = opts.status
     ? and(eq(routes.projectId, opts.projectId), eq(recommendations.status, opts.status))
     : eq(routes.projectId, opts.projectId);
@@ -162,5 +189,7 @@ export async function listRecommendations(opts: {
     .from(recommendations)
     .innerJoin(routes, eq(recommendations.routeId, routes.id))
     .where(where)
-    .orderBy(desc(recommendations.createdAt));
+    .orderBy(desc(recommendations.createdAt))
+    .limit(limit)
+    .offset(offset);
 }

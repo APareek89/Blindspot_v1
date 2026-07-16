@@ -1,6 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
-import { driftEvents, evalRuns, getDb, routes } from "@blindspot/db";
+import { and, desc, eq, getTableColumns, inArray } from "drizzle-orm";
+import { driftEvents, evalRuns, getDb, recommendations, routes } from "@blindspot/db";
 import { costPer1kCents } from "@blindspot/providers";
+import { clampPagination, type PageInput } from "@blindspot/shared";
 import { runEval } from "./eval/runner";
 import { generateRecommendation } from "./recommend";
 
@@ -77,6 +78,40 @@ export async function checkDrift(opts: {
   // recover quality: propose the best passing alternative (cost is secondary here)
   const recommendation = await generateRecommendation(opts.routeId, { mode: "drift" });
   return { drifted: true, oldScore, newScore, driftEvent, recommendation };
+}
+
+/**
+ * Project-wide drift timeline (PRD §10 Drift): every drift event across the project's
+ * routes, newest first, with the route name and the pending recommendation (if any) that
+ * the event produced — so the UI can link each drift to its approval.
+ */
+export async function listDriftEvents(projectId: string, page?: PageInput) {
+  const db = getDb();
+  const { limit, offset } = clampPagination(page?.limit, page?.offset);
+
+  const rows = await db
+    .select({ ...getTableColumns(driftEvents), routeName: routes.name })
+    .from(driftEvents)
+    .innerJoin(routes, eq(driftEvents.routeId, routes.id))
+    .where(eq(routes.projectId, projectId))
+    .orderBy(desc(driftEvents.createdAt))
+    .limit(limit)
+    .offset(offset);
+  if (rows.length === 0) return { drift_events: [] as Array<(typeof rows)[number] & { recommendationId: string | null }> };
+
+  // link each drift → the pending rec on that route targeting a different model
+  const routeIds = [...new Set(rows.map((r) => r.routeId))];
+  const pendingRecs = await db
+    .select({ id: recommendations.id, routeId: recommendations.routeId, toModel: recommendations.toModel })
+    .from(recommendations)
+    .where(and(inArray(recommendations.routeId, routeIds), eq(recommendations.status, "pending")))
+    .orderBy(desc(recommendations.createdAt));
+  const recByRoute = new Map<string, string>();
+  for (const r of pendingRecs) if (!recByRoute.has(r.routeId)) recByRoute.set(r.routeId, r.id);
+
+  return {
+    drift_events: rows.map((r) => ({ ...r, recommendationId: recByRoute.get(r.routeId) ?? null })),
+  };
 }
 
 /**

@@ -1,12 +1,23 @@
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { checkDrift, runGate } from "@blindspot/core";
+import { checkDrift, listDriftEvents, runGate } from "@blindspot/core";
 import { driftEvents, getDb } from "@blindspot/db";
+import { clampPagination } from "@blindspot/shared";
 import { getRouteByName } from "../route-resolver";
 import type { Env } from "../types";
 
 /** Drift detection + CI gate (PRD §5). Mounted under /v1. */
 export const driftRouter = new Hono<Env>();
+
+// project-wide drift timeline (PRD §10 Drift) — each event linked to its pending rec
+driftRouter.get("/drift-events", async (c) => {
+  return c.json(
+    await listDriftEvents(c.get("projectId"), {
+      limit: c.req.query("limit"),
+      offset: c.req.query("offset"),
+    }),
+  );
+});
 
 // re-eval the live model (or inject a simulated post-version-bump score) and flag drift
 driftRouter.post("/routes/:name/drift-check", async (c) => {
@@ -33,11 +44,14 @@ driftRouter.post("/routes/:name/drift-check", async (c) => {
 driftRouter.get("/routes/:name/drift-events", async (c) => {
   const route = await getRouteByName(c.get("projectId"), c.req.param("name"));
   if (!route) return c.json({ error: { message: "route not found" } }, 404);
+  const { limit, offset } = clampPagination(c.req.query("limit"), c.req.query("offset"));
   const rows = await getDb()
     .select()
     .from(driftEvents)
     .where(eq(driftEvents.routeId, route.id))
-    .orderBy(desc(driftEvents.createdAt));
+    .orderBy(desc(driftEvents.createdAt))
+    .limit(limit)
+    .offset(offset);
   return c.json({ drift_events: rows });
 });
 
