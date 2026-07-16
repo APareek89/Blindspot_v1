@@ -1,5 +1,5 @@
 %% Blindspot — master flow: Observe -> Eval -> Recommend -> Approve -> Route -> Gate
-%% intended — not yet built (authored at architecture approval; update as code lands)
+%% BUILT & verified live 2026-07-16 (Groq + Supabase). Dashboard surface: see 05-dashboard-mgmt.mmd.
 flowchart TD
   A["User agent call<br/>ENTRY · base_url points to gateway, model = route:name"]:::term
   B["Resolve route to approved live_model<br/>FUNCTION<br/>in: route:name · out: concrete model_ref"]:::fn

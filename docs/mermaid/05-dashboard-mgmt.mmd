@@ -1,0 +1,51 @@
+%% Blindspot — dashboard + management API (Phase 7). BUILT & verified live 2026-07-16.
+%% The Next.js dashboard is a pure HTTP client of /v1; the bs_live_ key never leaves the server.
+flowchart TD
+  U["Browser (client components)<br/>ENTRY · forms, toggles, drawers"]:::term
+  L{"Signed in?<br/>FUNCTION · httpOnly cookie bs_key present"}:::dec
+  SI["Sign-in-with-key screen<br/>FUNCTION · validates via GET /v1/me · sets httpOnly cookie"]:::fn
+  SC["Next.js server (RSC + server actions)<br/>FUNCTION · reads bs_key from cookie, never exposes it"]:::fn
+  API["Typed client lib/api.ts<br/>FUNCTION · Bearer bs_live_ key · fetch no-store"]:::fn
+  MW["Gateway auth<br/>FUNCTION · requireProject · key hash to project_id"]:::fn
+
+  subgraph MGMT["/v1 management surface (thin Hono handlers, logic in @blindspot/core)"]
+    ME["meta: /me /overview /settings<br/>FUNCTION · KPIs, cost-vs-quality, activity"]:::fn
+    RT["routes: GET/PATCH /routes[/:name]<br/>FUNCTION · policy + auto_approve, candidate pool"]:::fn
+    TR["traces: GET /traces<br/>FUNCTION · paginated, tenant-scoped"]:::fn
+    DR["drift: GET /drift-events<br/>FUNCTION · timeline linked to recs"]:::fn
+    KG["keys: POST/GET /keys<br/>FUNCTION · mint bs_live_ (shown once) + list prefixes"]:::fn
+    KP["provider-keys: GET/PUT/DELETE<br/>FUNCTION · AES-256-GCM · value NEVER returned"]:::fn
+  end
+
+  CORE["@blindspot/core services<br/>FUNCTION · every query scoped by project_id (tenant guard)"]:::fn
+  DB["Postgres (schema: blindspot)<br/>DATA · routes, eval_runs, recommendations, golden_*, traces, keys"]:::data
+  REUSE["Reused loop endpoints<br/>FUNCTION · golden CRUD, candidates+eval, approve/reject, drift-check, gate"]:::fn
+  DEC{"User decision on a Recommendation<br/>USER · approve / reject (evidence drawer)"}:::ask
+
+  U --> L
+  L -- "no" --> SI --> SC
+  L -- "yes" --> SC
+  SC --> API --> MW
+  MW --> ME
+  MW --> RT
+  MW --> TR
+  MW --> DR
+  MW --> KG
+  MW --> KP
+  MW --> REUSE
+  ME --> CORE
+  RT --> CORE
+  TR --> CORE
+  DR --> CORE
+  KG --> CORE
+  KP --> CORE
+  REUSE --> CORE
+  CORE --> DB
+  U -.-> DEC
+  DEC -.-> REUSE
+
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;

@@ -13,7 +13,7 @@
 <h1>Architecture Flow</h1>
 <h2>Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate</h2>
 <pre class="mermaid">%% Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate
-%% intended — not yet built (authored at architecture approval; update as code lands)
+%% BUILT &amp; verified live 2026-07-16 (Groq + Supabase). Dashboard surface: see 05-dashboard-mgmt.mmd.
 flowchart TD
   A["User agent call&lt;br/&gt;ENTRY · base_url points to gateway, model = route:name"]:::term
   B["Resolve route to approved live_model&lt;br/&gt;FUNCTION&lt;br/&gt;in: route:name · out: concrete model_ref"]:::fn
@@ -215,6 +215,59 @@ flowchart TD
   classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
   classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
   classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+</pre>
+<h2>Blindspot — dashboard + management API (Phase 7). BUILT &amp; verified live 2026-07-16.</h2>
+<pre class="mermaid">%% Blindspot — dashboard + management API (Phase 7). BUILT &amp; verified live 2026-07-16.
+%% The Next.js dashboard is a pure HTTP client of /v1; the bs_live_ key never leaves the server.
+flowchart TD
+  U["Browser (client components)&lt;br/&gt;ENTRY · forms, toggles, drawers"]:::term
+  L{"Signed in?&lt;br/&gt;FUNCTION · httpOnly cookie bs_key present"}:::dec
+  SI["Sign-in-with-key screen&lt;br/&gt;FUNCTION · validates via GET /v1/me · sets httpOnly cookie"]:::fn
+  SC["Next.js server (RSC + server actions)&lt;br/&gt;FUNCTION · reads bs_key from cookie, never exposes it"]:::fn
+  API["Typed client lib/api.ts&lt;br/&gt;FUNCTION · Bearer bs_live_ key · fetch no-store"]:::fn
+  MW["Gateway auth&lt;br/&gt;FUNCTION · requireProject · key hash to project_id"]:::fn
+
+  subgraph MGMT["/v1 management surface (thin Hono handlers, logic in @blindspot/core)"]
+    ME["meta: /me /overview /settings&lt;br/&gt;FUNCTION · KPIs, cost-vs-quality, activity"]:::fn
+    RT["routes: GET/PATCH /routes[/:name]&lt;br/&gt;FUNCTION · policy + auto_approve, candidate pool"]:::fn
+    TR["traces: GET /traces&lt;br/&gt;FUNCTION · paginated, tenant-scoped"]:::fn
+    DR["drift: GET /drift-events&lt;br/&gt;FUNCTION · timeline linked to recs"]:::fn
+    KG["keys: POST/GET /keys&lt;br/&gt;FUNCTION · mint bs_live_ (shown once) + list prefixes"]:::fn
+    KP["provider-keys: GET/PUT/DELETE&lt;br/&gt;FUNCTION · AES-256-GCM · value NEVER returned"]:::fn
+  end
+
+  CORE["@blindspot/core services&lt;br/&gt;FUNCTION · every query scoped by project_id (tenant guard)"]:::fn
+  DB["Postgres (schema: blindspot)&lt;br/&gt;DATA · routes, eval_runs, recommendations, golden_*, traces, keys"]:::data
+  REUSE["Reused loop endpoints&lt;br/&gt;FUNCTION · golden CRUD, candidates+eval, approve/reject, drift-check, gate"]:::fn
+  DEC{"User decision on a Recommendation&lt;br/&gt;USER · approve / reject (evidence drawer)"}:::ask
+
+  U --&gt; L
+  L -- "no" --&gt; SI --&gt; SC
+  L -- "yes" --&gt; SC
+  SC --&gt; API --&gt; MW
+  MW --&gt; ME
+  MW --&gt; RT
+  MW --&gt; TR
+  MW --&gt; DR
+  MW --&gt; KG
+  MW --&gt; KP
+  MW --&gt; REUSE
+  ME --&gt; CORE
+  RT --&gt; CORE
+  TR --&gt; CORE
+  DR --&gt; CORE
+  KG --&gt; CORE
+  KP --&gt; CORE
+  REUSE --&gt; CORE
+  CORE --&gt; DB
+  U -.-&gt; DEC
+  DEC -.-&gt; REUSE
+
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
 </pre>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";

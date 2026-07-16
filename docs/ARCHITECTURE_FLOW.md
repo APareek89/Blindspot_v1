@@ -1,10 +1,15 @@
 # Blindspot — Architecture Flow
 
-> **Status: intended — not yet built.** These diagrams describe the *target* runtime so we
-> can debug against the flow, not the code. Update the `.mmd` in the same session as any
-> structural change; the git diff of the `.mmd` IS the change highlight. Regenerate the
-> standalone viewer with:
+> **Status: BUILT & verified live (Phases 0–7, 2026-07-16).** The loop + the Next.js
+> dashboard/management surface run against Groq + Supabase. Pending: Phase 4.5 (per-example
+> outputs → fill evidence samples/perCriterion) and Phase 8 (queue scale, observability,
+> rate limits). These diagrams describe the *real* runtime; update the `.mmd` in the same
+> session as any structural change — the git diff of the `.mmd` IS the change highlight.
+> Regenerate the standalone viewer with:
 > `node /Users/anandpareek/.claude/skills/power-coding/scripts/build-html.mjs docs/mermaid docs/architecture-flow.html`
+>
+> **Diagrams:** `00` master loop · `01` build decisions · `02` golden sets · `03` eval→recommend ·
+> `04` drift→gate · **`05` dashboard + management API** (Phase 7).
 
 ## Legend
 | Label | Meaning |

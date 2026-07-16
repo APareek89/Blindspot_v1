@@ -6,42 +6,52 @@
 > Keep this file ONE SCREEN: current state only; history lives in Learning.MD and git.
 
 ## Compact summary of previous session
-- Architecture approved (2026-07-16). Built the **entire Blindspot backend loop, Phases 0→5**,
-  and **verified it live** against Groq models + a live Supabase Postgres.
-- Stack as approved: TS · pnpm+Turborepo · Hono gateway · Vercel AI SDK v4 adapters · Drizzle ·
-  BullMQ/Redis (inline fallback) · Zod. Packages: `shared`, `db`, `providers`, `core`; apps:
-  `gateway`, `worker`.
-- One real bug found + fixed via the live smoke test (golden inputs must be self-contained — see
-  Learning.MD). Nothing committed yet (no git commits).
+- Backend loop Phases 0–5 built + verified live (Groq + Supabase). Then this session:
+  **Phase 7 dashboard (Next.js App Router)** + the **management API** it needed + **cleared the
+  FMEA P2 backlog**. First git commits made (repo had none). All verified live.
 
 ## Current state
-- ✅ **Phases 0–5 code-complete, `pnpm typecheck` green on all 6 packages, VERIFIED LIVE**:
-  connect → `route:<name>` (auto-create) → trace → golden set (upload OR agent) → eval (LLM-judge)
-  → recommendation (evidence) → approve → **live model actually switched** → drift detected →
-  CI gate returned **422** on a sub-bar model.
-- ✅ **DB**: `blindspot` Postgres schema (11 tables) pushed to Supabase (isolated via `schemaFilter`
-  because the DB is shared — `public.generations` etc. exist). `db:push`/`bootstrap` work.
-- ✅ **`.env` fixed**: real secrets moved from committed `.env.example` (now blank) into git-ignored
-  `.env`. Config: `BLINDSPOT_DEFAULT_MODEL=groq:llama-3.3-70b-versatile`, `JUDGE_MODEL=groq:llama-3.3-70b-versatile`.
-- ⚠️ **ANTHROPIC_API_KEY is invalid** — every Anthropic model returns 404 not_found (no model access).
-  Groq works great. OpenAI/Gemini/HF keys are blank.
-- ✅ 5 mermaid diagrams current + validated (`docs/architecture-flow.html`); build-decisions log updated.
-- ✅ **FMEA done (14 modes)** — **P0 tenant-IDOR FIXED & verified** (Project B → 404 on A's golden data);
-  P1s fixed: cost-cap enforced in `runEval`, per-example eval resilience, provider timeout (`PROVIDER_TIMEOUT_MS`),
-  best-effort trace write, race-safe route auto-create. Typecheck green.
-- ▶ **Next = Phase 7 dashboard** (Next.js §10) — the demo surface, against the finished API.
+- ✅ **Phases 0–7 code-complete; `pnpm typecheck` green (7 packages incl. dashboard); build green.**
+- ✅ **Management API** (`packages/core` logic, thin Hono handlers): `GET /v1/me · /overview · /settings`,
+  `GET/PATCH /v1/routes[/:name]`, `DELETE /routes/:name/candidates/:modelRef`, `GET /v1/traces`,
+  `GET /v1/drift-events` (timeline), `POST/GET /v1/keys` (mint bs_live_ once), `GET/PUT/DELETE /v1/provider-keys`.
+  Every endpoint tenant-scoped by `project_id`; smoke-tested live.
+- ✅ **Dashboard** `apps/dashboard` (port 3001, `pnpm start:dashboard`): Overview · Routes & Models (+ route
+  detail: candidate pool, policy editor, auto-approve toggle, score chart) · Approvals + evidence drawer ·
+  Golden Sets (upload/agent/CRUD/label/promote/versions) · Drift (timeline + version-bump simulator) ·
+  Connect · Settings (provider keys, gateway-key mint, cost caps). Sign-in-with-key → **httpOnly cookie**,
+  all gateway calls proxied server-side (key never in the browser). All 7 screens render live data; auth
+  redirect + empty states confirmed.
+- ✅ **FMEA P2 backlog cleared:** transactional approve (in-tx status recheck), drift+auto_approve cost
+  guard (never switches to a pricier model), pagination on all list endpoints, golden upload size/row caps,
+  startup model↔key validation. Single source of truth for the gateway-key hash moved into core.
+- ✅ 6 mermaid diagrams valid + viewer rebuilt (added `05-dashboard-mgmt.mmd`); status flipped to BUILT.
+- ✅ **FMEA feature-complete scan done (8 modes, 0 P0 / 0 P1 / 8 P2)** — residual, all Phase-4.5/8-shaped.
+- ⚠️ **ANTHROPIC_API_KEY invalid** (404); only **Groq** has a working key. `BLINDSPOT_DEFAULT_MODEL` +
+  `JUDGE_MODEL` = `groq:llama-3.3-70b-versatile`. Gemini/OpenAI/HF keys blank.
 
 ## Pending points
-- 🧑 USER: **Loop stays OFF** (paid evals cost money — re-offer only if asked). Fix the **Anthropic key**
-  (all models 404) if you want Claude candidates. Optionally set `REDIS_URL` to exercise the BullMQ worker.
-- 🤖 AGENT: **Phase 7 dashboard** — build §10 screens (Connect + Approvals + Golden Sets first) as a
-  Next.js app in `apps/dashboard` hitting the existing `/v1/*` API. Dark, Linear/Vercel-clean (§10 tokens).
-- 🤖 AGENT: **FMEA P2 backlog** (tracked, not blocking): non-transactional approve (status vs live_model);
-  drift+auto_approve could pick a pricier model (add cost guard); no rate-limit/pagination (P8); upload size
-  cap; model-env-vs-available-key config drift. Also **Phase 4.5** (persist per-example outputs → fill
-  recommendation evidence `samples`/`perCriterion`), **Phase 8** observability/Sentry/OTel, first **git commit**.
+- 🧑 USER: **Loop stays OFF** (paid eval runs cost money — re-offer only if asked). To populate the demo
+  (recommendation + evidence + drift) you must run a paid back-test: generate/upload a golden set → add a
+  cheaper candidate (`groq:llama-3.1-8b-instant`) → it back-tests → a Recommendation appears in Approvals →
+  approve → live model swaps. I seeded a 2-example uploaded golden set on `route:summarizer` (no LLM cost).
+  Fix the Anthropic key if you want Claude candidates. Set `REDIS_URL` to exercise the BullMQ worker.
+- 🤖 AGENT (FMEA P2 — tracked, non-blocking): (1) `getOverview`/`listRoutes` load unbounded eval-run
+  history — window/aggregate in SQL; (2) dashboard eval buttons spend BYO money with only a per-run cap —
+  add per-project budget/confirm (Phase 8 rate-limit); (3) management 500s aren't logged/alerted (Phase 8
+  obs); (4) **Phase 4.5** — persist per-example candidate outputs to fill evidence `samples`/`perCriterion`
+  (evidence drawer shows an honest note until then); (5) `BLINDSPOT_GATEWAY_URL` unset in prod silently
+  targets localhost — fail loud; (6) `updateRoute` policy patch is read-modify-write (last-write-wins).
+- 🤖 AGENT: **Phase 8** (queue scale, DLQ, rate limits, OTel/Sentry, k6) then **Phase 9** ship (Render).
 
-## API surface (all `/v1`, bearer `bs_live_` key; run: `pnpm --filter @blindspot/gateway bootstrap`)
-`POST /chat/completions` · golden: `/routes/:n/golden-sets/{upload,generate}`, `/golden-sets/:id/examples`,
-`/golden-examples/:id` · eval: `/routes/:n/{candidates,eval,eval-runs}` · approvals: `/recommend`,
-`/recommendations[/:id/{approve,reject}]` · drift/gate: `/routes/:n/{drift-check,drift-events,gate}`.
+## Run it
+`set -a; . ./.env; set +a` then: gateway → `pnpm --filter @blindspot/gateway bootstrap` (prints a bs_live_
+key ONCE) → `pnpm start:gateway` (:8787). Dashboard → `pnpm start:dashboard` (:3001) → sign in with the key.
+`BLINDSPOT_GATEWAY_URL` defaults to http://localhost:8787.
+
+## API surface (all `/v1`, bearer `bs_live_` key)
+mgmt: `/me · /overview · /settings · /routes[/:name] (GET,PATCH) · /routes/:n/candidates/:ref (DELETE) ·
+/traces · /drift-events · /keys (GET,POST) · /provider-keys[/:provider] (GET,PUT,DELETE)`.
+loop: `/chat/completions` · golden `/routes/:n/golden-sets/{upload,generate}`, `/golden-sets/:id/examples`,
+`/golden-examples/:id`, `/golden-sets/:id/promote-trace` · eval `/routes/:n/{candidates,eval,eval-runs}` ·
+approvals `/routes/:n/recommend`, `/recommendations[/:id/{approve,reject}]` · drift `/routes/:n/{drift-check,drift-events,gate}`.

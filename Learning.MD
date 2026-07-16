@@ -6,6 +6,23 @@
 
 <!-- Newest first. Entry format: -->
 
+## 2026-07-16 — Adding the dashboard: pnpm `allowBuilds` + Next server-only key handling
+**What happened:** (1) Every `pnpm --filter @blindspot/dashboard <script>` aborted with
+`ERR_PNPM_IGNORED_BUILDS: sharp` before the script even ran. (2) Design decision on where the
+`bs_live_` key lives so it never leaks to the browser.
+**Root cause / decision:** (1) `pnpm-workspace.yaml` has an `allowBuilds:` policy map; the setup left
+`sharp: set this to true or false` — an unresolved value, so pnpm treated sharp's native build as an
+un-decided ignored build and pnpm's pre-run deps check exits non-zero. sharp is a Next image-optim dep
+we don't need. (2) The dashboard is a **pure HTTP client of /v1** — the key is held in an **httpOnly
+cookie**, read only in Server Components / Server Actions (`lib/session.ts`), and every gateway call is
+proxied server-side via `lib/api.ts`. Client components never receive the key.
+**Fix:** set `sharp: false` in `allowBuilds` (Next runs fine without it; no `next/image` remote optim).
+For the key: `requireApi()` reads the cookie server-side and returns a bound client; mutations are Server
+Actions that also read the cookie — the browser bundle has no token.
+**Watch for later:** any new native-build dep (esbuild, sharp, bcrypt…) must get an explicit
+true/false in `allowBuilds` or `pnpm --filter` runs break. If a dashboard page needs data, fetch it in a
+Server Component / Server Action — never `fetch` the gateway from a client component with the key.
+
 ## 2026-07-16 — FMEA: golden-set endpoints leaked across tenants (IDOR)
 **What happened:** FMEA (on feature-complete) found the golden-set/example/trace endpoints resolved by
 `:id` with **no project ownership check** — any project could read/edit/delete another's golden data by id.
