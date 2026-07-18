@@ -3,20 +3,47 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { ScoreChart } from "@/components/charts";
-import { CATALOG } from "@/lib/catalog";
 import { costPer1k, modelName, ms, qualityPct } from "@/lib/format";
-import type { RouteDetail } from "@/lib/types";
-import { addCandidateA, recommendA, removeCandidateA, runEvalA, savePolicy } from "../actions";
+import type {
+  ModelCompatibility,
+  RouteDetail,
+  RouteModelCompatibility,
+} from "@/lib/types";
+import { addCandidateA, recommendA, removeCandidateA, savePolicy } from "../actions";
 
-export function RouteDetailView({ detail }: { detail: RouteDetail }) {
+function capabilityLabels(model: ModelCompatibility): string[] {
+  return [
+    ...(model.capabilities.toolCalling ? ["tools"] : []),
+    ...(model.capabilities.structuredOutput ? ["structured"] : []),
+    ...(model.capabilities.streaming ? ["streaming"] : []),
+    ...(model.capabilities.inputModalities.includes("image") ? ["vision"] : []),
+    ...(model.capabilities.contextTokens
+      ? [`${Math.round(model.capabilities.contextTokens / 1000)}K context`]
+      : []),
+  ];
+}
+
+function priceLabel(model: ModelCompatibility): string {
+  if (model.inputUsdPerMillion == null || model.outputUsdPerMillion == null) {
+    return "Pricing unavailable";
+  }
+  return `$${model.inputUsdPerMillion}/$${model.outputUsdPerMillion} per MTok in/out`;
+}
+
+export function RouteDetailView({
+  detail,
+  compatibility,
+}: {
+  detail: RouteDetail;
+  compatibility: RouteModelCompatibility;
+}) {
   const route = detail.route.name;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const [minScore, setMinScore] = useState(detail.route.policy.minScore);
-  const [newRef, setNewRef] = useState("");
-  const [source, setSource] = useState("api");
+  const pooledModels = new Set(detail.candidates.map((candidate) => candidate.modelRef));
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok?: string) => {
     setError(null);
@@ -99,10 +126,10 @@ export function RouteDetailView({ detail }: { detail: RouteDetail }) {
           <div className="stack" style={{ gap: 10 }}>
             <button
               className="btn"
-              disabled={pending || !detail.route.liveModel}
-              onClick={() => run(() => runEvalA(route), "Re-evaluated the live model.")}
+              disabled
+              title="Phase 7C adds the cost estimate and explicit spend approval"
             >
-              Re-evaluate live model
+              Re-evaluate · budget setup next
             </button>
             <button
               className="btn"
@@ -135,7 +162,7 @@ export function RouteDetailView({ detail }: { detail: RouteDetail }) {
       <div className="card pad-0" style={{ marginBottom: 14 }}>
         <div className="row between" style={{ padding: "14px 16px" }}>
           <span className="card-title">Candidate pool</span>
-          <span className="muted small">back-tested on this route’s golden set</span>
+          <span className="muted small">quality evidence appears after an approved eval</span>
         </div>
         <table className="table">
           <thead>
@@ -165,8 +192,12 @@ export function RouteDetailView({ detail }: { detail: RouteDetail }) {
                 <td className="num mono">{ms(c.latencyMs)}</td>
                 <td className="num">
                   <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                    <button className="btn sm" disabled={pending} onClick={() => run(() => runEvalA(route, c.modelRef), "Back-test complete.")}>
-                      Eval
+                    <button
+                      className="btn sm"
+                      disabled
+                      title="Phase 7C adds the cost estimate and explicit spend approval"
+                    >
+                      Eval · budget first
                     </button>
                     {!c.isLive && (
                       <button
@@ -185,54 +216,99 @@ export function RouteDetailView({ detail }: { detail: RouteDetail }) {
         </table>
       </div>
 
-      {/* add candidate */}
+      {/* technically compatible catalog */}
       <div className="card">
-        <div className="card-title" style={{ marginBottom: 12 }}>
-          Add a candidate from the catalog
+        <div className="row between wrap" style={{ marginBottom: 4 }}>
+          <span className="card-title">Compatible models</span>
+          <span className="badge cyan">Technical gate</span>
         </div>
-        <div className="row wrap" style={{ gap: 8, alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 260px" }}>
-            <label className="label">Model</label>
-            <input
-              className="input mono"
-              list="catalog"
-              placeholder="provider:model"
-              value={newRef}
-              onChange={(e) => setNewRef(e.target.value)}
-            />
-            <datalist id="catalog">
-              {CATALOG.map((c) => (
-                <option key={c.ref} value={c.ref}>
-                  {c.label} — {c.note}
-                </option>
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <label className="label">Source</label>
-            <select className="select" style={{ width: 130 }} value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="api">api</option>
-              <option value="hf">hf</option>
-              <option value="aggregator">aggregator</option>
-              <option value="local">local</option>
-            </select>
-          </div>
-          <button
-            className="btn primary"
-            disabled={pending || !newRef.trim()}
-            onClick={() =>
-              run(
-                () => addCandidateA(route, newRef.trim(), source),
-                "Candidate added and back-tested — a passing cheaper model appears in Approvals.",
-              )
-            }
-          >
-            {pending ? "Back-testing…" : "Add & back-test"}
-          </button>
+        <div className="card-sub" style={{ marginBottom: 12 }}>
+          Models are matched against the requirements Blindspot observed at this exact agent node.
+          Quality is evaluated separately on your golden set.
         </div>
+
+        {compatibility.workflow && (
+          <div className="hint" style={{ marginBottom: 12 }}>
+            Source: <span className="mono">{compatibility.workflow.name}</span> →{" "}
+            <span className="mono">{compatibility.workflow.nodeName}</span>
+          </div>
+        )}
+        {!compatibility.optimizationAllowed && (
+          <div className="alert warn" style={{ marginBottom: 12 }}>
+            {compatibility.optimizationBlockedReason}.{" "}
+            <Link href="/workflows">Choose it under Workflows →</Link>
+          </div>
+        )}
+
+        {compatibility.eligible.length === 0 ? (
+          <div className="alert info" style={{ marginBottom: 12 }}>
+            No model is eligible yet. Sync Anthropic under <Link href="/settings">Settings</Link>{" "}
+            or inspect the exclusion reasons below.
+          </div>
+        ) : (
+          <div className="grid cols-2" style={{ marginBottom: 14 }}>
+            {compatibility.eligible.map((model) => {
+              const inPool = pooledModels.has(model.modelRef);
+              return (
+                <div className="card" key={model.modelRef}>
+                  <div className="row between wrap" style={{ marginBottom: 7 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{model.displayName}</div>
+                      <div className="mono muted small">{model.modelRef}</div>
+                    </div>
+                    <span className="badge pass">Compatible</span>
+                  </div>
+                  <div className="row wrap" style={{ gap: 5, marginBottom: 9 }}>
+                    {capabilityLabels(model).map((capability) => (
+                      <span className="badge neutral" key={capability}>
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="muted small" style={{ marginBottom: 10 }}>
+                    {priceLabel(model)}
+                  </div>
+                  <button
+                    className={`btn sm ${inPool ? "" : "primary"}`}
+                    disabled={pending || inPool || !compatibility.optimizationAllowed}
+                    onClick={() =>
+                      run(
+                        () => addCandidateA(route, model.modelRef),
+                        "Candidate added. No eval spend yet — budget approval comes next.",
+                      )
+                    }
+                  >
+                    {inPool ? "In candidate pool" : "Add candidate"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <details>
+          <summary style={{ cursor: "pointer", fontWeight: 550 }}>
+            Excluded models ({compatibility.excluded.length})
+          </summary>
+          <div className="stack" style={{ marginTop: 10, gap: 8 }}>
+            {compatibility.excluded.map((model) => (
+              <div className="card" key={model.modelRef}>
+                <div className="row between wrap" style={{ marginBottom: 5 }}>
+                  <span style={{ fontWeight: 550 }}>{model.displayName}</span>
+                  <span className="badge warn">{model.status.replaceAll("_", " ")}</span>
+                </div>
+                <ul className="muted small" style={{ paddingLeft: 18 }}>
+                  {model.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
         <div className="hint">
-          Adding a candidate runs a back-test on the current golden set — this can take a few
-          seconds per example.
+          Adding a compatible model only creates an experiment candidate. Blindspot will show the
+          full eval estimate and sampling plan before any paid run.
         </div>
       </div>
     </>

@@ -12,3 +12,4 @@ export * from "./overview";
 export * from "./project";
 export * from "./config-check";
 export * from "./workflows";
+export * from "./model-registry";

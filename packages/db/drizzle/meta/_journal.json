@@ -15,6 +15,13 @@
       "when": 1784379382471,
       "tag": "0001_panoramic_reptil",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784382595785,
+      "tag": "0002_moaning_sinister_six",
+      "breakpoints": true
     }
   ]
 }

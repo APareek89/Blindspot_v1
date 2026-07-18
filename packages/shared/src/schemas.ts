@@ -12,6 +12,7 @@ export const PROVIDERS = [
   "together",
   "ollama",
 ] as const;
+export const ProviderSchema = z.enum(PROVIDERS);
 export type Provider = (typeof PROVIDERS)[number];
 
 /** How much application content Blindspot may retain for a project. */
@@ -44,6 +45,44 @@ export const NodeRequirementsSchema = z
   })
   .default({});
 export type NodeRequirements = z.infer<typeof NodeRequirementsSchema>;
+
+/** Normalized provider capability metadata. null means the provider did not make a claim. */
+export const ModelCapabilitiesSchema = z.object({
+  inputModalities: z.array(z.enum(["text", "image", "audio", "video"])).default(["text"]),
+  outputModalities: z.array(z.enum(["text", "image", "audio"])).default(["text"]),
+  toolCalling: z.boolean().nullable().default(null),
+  structuredOutput: z.boolean().nullable().default(null),
+  streaming: z.boolean().nullable().default(null),
+  systemMessages: z.boolean().nullable().default(null),
+  contextTokens: z.number().int().positive().nullable().default(null),
+  maxOutputTokens: z.number().int().positive().nullable().default(null),
+});
+export type ModelCapabilities = z.infer<typeof ModelCapabilitiesSchema>;
+
+export const ModelRegistrySourceSchema = z.enum(["provider", "curated", "probe"]);
+export type ModelRegistrySource = z.infer<typeof ModelRegistrySourceSchema>;
+
+export const ModelAvailabilitySchema = z.enum(["available", "unavailable", "deprecated"]);
+export type ModelAvailability = z.infer<typeof ModelAvailabilitySchema>;
+
+export const ModelProbeStatusSchema = z.enum(["unverified", "verified", "failed"]);
+export type ModelProbeStatus = z.infer<typeof ModelProbeStatusSchema>;
+
+export const CompatibilityStatusSchema = z.enum([
+  "compatible",
+  "needs_verification",
+  "needs_provider_key",
+  "incompatible",
+  "eval_failed",
+]);
+export type CompatibilityStatus = z.infer<typeof CompatibilityStatusSchema>;
+
+/** Only the provider adapters wired for the agent-workspace prototype may be synchronized. */
+export const RegistryProviderSchema = z.enum(["anthropic", "hf", "fireworks"]);
+export type RegistryProvider = z.infer<typeof RegistryProviderSchema>;
+
+export const ModelRegistrySyncInputSchema = z.object({ provider: RegistryProviderSchema });
+export const ModelProbeInputSchema = z.object({ modelRef: z.string().trim().min(3).max(300) });
 
 const JsonRecordSchema = z.record(z.unknown());
 

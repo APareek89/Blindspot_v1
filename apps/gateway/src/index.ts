@@ -18,6 +18,7 @@ import { evalRouter } from "./manage/eval";
 import { golden } from "./manage/golden";
 import { keysRouter } from "./manage/keys";
 import { metaRouter } from "./manage/meta";
+import { modelRegistryRouter } from "./manage/model-registry";
 import { routesRouter } from "./manage/routes";
 import { workflowsRouter } from "./manage/workflows";
 import { resolveOrCreateRoute } from "./route-resolver";
@@ -48,6 +49,7 @@ app.route("/v1", evalRouter);
 app.route("/v1", approvals);
 app.route("/v1", driftRouter);
 app.route("/v1", workflowsRouter);
+app.route("/v1", modelRegistryRouter);
 
 /**
  * OpenAI-compatible chat completions (PRD §1, §12 Phase 1).

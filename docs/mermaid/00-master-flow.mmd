@@ -1,5 +1,7 @@
 %% Blindspot — master flow: Observe -> Eval -> Recommend -> Approve -> Route -> Gate
 %% BUILT & verified live 2026-07-16 (Groq + Supabase). Dashboard surface: see 05-dashboard-mgmt.mmd.
+%% files: apps/gateway/src/index.ts, packages/core/src/eval/queue.ts, packages/core/src/eval/runner.ts, packages/core/src/policy.ts, packages/core/src/approvals.ts
+%% granularity: summary
 flowchart TD
   A["User agent call<br/>ENTRY · base_url points to gateway, model = route:name"]:::term
   B["Resolve route to approved live_model<br/>FUNCTION<br/>in: route:name · out: concrete model_ref"]:::fn
@@ -8,7 +10,7 @@ flowchart TD
   E["Decrypt user provider key<br/>FUNCTION · AES-256-GCM<br/>in: provider_keys.encrypted_key · out: in-memory key"]:::fn
   F["Live LLM call through user key<br/>LIBRARY · Vercel AI SDK adapter<br/>in: prompt + model_ref · out: completion"]:::data
   G["Write trace<br/>DATA · traces · cost, latency, output"]:::data
-  H["Enqueue eval run, async<br/>LIBRARY · BullMQ on Redis"]:::data
+  H["Dispatch an explicitly approved eval<br/>FUNCTION · inline local override or BullMQ on Redis<br/>in: authorized run · out: eval job"]:::data
   I["Judge scores golden set<br/>AGENT · JUDGE_MODEL<br/>in: outputs vs golden_examples · out: per-criterion scores"]:::agent
   J["Aggregate avg_score, cost, latency<br/>FUNCTION · writes DATA · eval_runs"]:::fn
   K{"Drift? new score below route band<br/>FUNCTION · new below old minus margin"}:::dec

@@ -8,11 +8,13 @@ import type {
   GoldenExample,
   GoldenSet,
   MintedKey,
+  ModelRegistryOverview,
   Overview,
   Project,
   ProviderKey,
   Recommendation,
   RouteDetail,
+  RouteModelCompatibility,
   RouteSummary,
   Settings,
   Trace,
@@ -103,6 +105,10 @@ export function api(key: string) {
         `/v1/routes${qs({ limit: p.limit, offset: p.offset })}`,
       ),
     getRoute: (name: string) => get<RouteDetail>(`/v1/routes/${encodeURIComponent(name)}`),
+    getRouteCompatibility: (name: string) =>
+      get<RouteModelCompatibility>(
+        `/v1/routes/${encodeURIComponent(name)}/model-compatibility`,
+      ),
     patchRoute: (name: string, body: { minScore?: number; autoApprove?: boolean }) =>
       send<{ route: unknown }>("PATCH", `/v1/routes/${encodeURIComponent(name)}`, body),
     addCandidate: (name: string, body: { modelRef: string; source?: string }) =>
@@ -196,6 +202,17 @@ export function api(key: string) {
       send<{ provider_key: ProviderKey }>("PUT", `/v1/provider-keys/${provider}`, { value }),
     deleteProviderKey: (provider: string) =>
       send<{ ok: true }>("DELETE", `/v1/provider-keys/${provider}`),
+    modelRegistry: () => get<ModelRegistryOverview>("/v1/model-registry"),
+    syncModelRegistry: (provider: "anthropic" | "hf" | "fireworks") =>
+      send<{
+        sync: {
+          provider: string;
+          discovered: number;
+          prototypeModels: number;
+          syncedAt: string;
+          tokenCost: 0;
+        };
+      }>("POST", "/v1/model-registry/sync", { provider }),
   };
 }
 

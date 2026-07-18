@@ -40,6 +40,7 @@ STEP 2 — Scaffold the env files:
     # --- data + cache ---
     DATABASE_URL=
     REDIS_URL=
+    BLINDSPOT_EVAL_MODE=
     # --- security ---
     ENCRYPTION_KEY=
     # --- ops (optional, free tiers) ---
@@ -61,6 +62,8 @@ STEP 3 — Walk me through each credential, in this order, waiting after each:
      Neon. FREE tier on all three. Paste the full postgres:// URL.
   8. REDIS_URL → Upstash (upstash.com → create Redis → copy the `rediss://` URL) OR Render
      Key Value. FREE tier. Used for the queue + cache.
+     For local Redis-free development, set BLINDSPOT_EVAL_MODE to `inline`; remove that
+     override when Redis-backed workers are enabled.
   9. ENCRYPTION_KEY → generate it FOR me locally (do not ask me): run
      `openssl rand -hex 32`, write the output to ENCRYPTION_KEY in `.env`, confirm "saved ✓".
      (This encrypts users' stored provider keys at rest.)

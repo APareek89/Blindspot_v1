@@ -10,7 +10,16 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { CaptureMode, Evidence, NodeRequirements, Policy } from "@blindspot/shared";
+import type {
+  CaptureMode,
+  Evidence,
+  ModelAvailability,
+  ModelCapabilities,
+  ModelProbeStatus,
+  ModelRegistrySource,
+  NodeRequirements,
+  Policy,
+} from "@blindspot/shared";
 
 // Blindspot lives in its own Postgres schema so it never collides with (or introspects)
 // other tables in a shared database. drizzle.config sets schemaFilter to match.
@@ -103,6 +112,45 @@ export const providerKeys = bs.table(
   },
   (t) => [
     uniqueIndex("provider_keys_project_provider_idx").on(t.projectId, t.provider),
+  ],
+);
+
+/**
+ * Project-scoped provider catalog. Availability is scoped to the user's BYO account:
+ * a model listed for one project is never assumed to be callable by another.
+ */
+export const modelRegistry = bs.table(
+  "model_registry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    provider: providerName("provider").notNull(),
+    modelRef: text("model_ref").notNull(),
+    providerModelId: text("provider_model_id").notNull(),
+    displayName: text("display_name").notNull(),
+    source: text("source").$type<ModelRegistrySource>().notNull().default("provider"),
+    availability: text("availability")
+      .$type<ModelAvailability>()
+      .notNull()
+      .default("available"),
+    capabilitiesJson: jsonb("capabilities_json").$type<ModelCapabilities>().notNull(),
+    inputUsdPerMillion: real("input_usd_per_million"),
+    outputUsdPerMillion: real("output_usd_per_million"),
+    providerCreatedAt: timestamp("provider_created_at", { withTimezone: true }),
+    deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    lastProbedAt: timestamp("last_probed_at", { withTimezone: true }),
+    probeStatus: text("probe_status")
+      .$type<ModelProbeStatus>()
+      .notNull()
+      .default("unverified"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("model_registry_project_model_idx").on(t.projectId, t.modelRef),
+    index("model_registry_project_provider_idx").on(t.projectId, t.provider),
   ],
 );
 

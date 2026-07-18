@@ -33,11 +33,10 @@ export async function savePolicy(
 export async function addCandidateA(
   route: string,
   modelRef: string,
-  source: string,
 ): Promise<Result> {
   const client = await requireApi();
   try {
-    await client.addCandidate(route, { modelRef, source });
+    await client.addCandidate(route, { modelRef });
   } catch (e) {
     return fail(e);
   }

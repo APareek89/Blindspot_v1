@@ -6,6 +6,18 @@
 
 <!-- Newest first. Entry format: -->
 
+## 2026-07-18 — Provider catalog evidence must be bound to the current account key
+**What happened:** Phase 7B FMEA found that replacing a provider key while a catalog sync was in
+flight could certify the old account's models for the new key.
+**Why chain:** sync decrypted the key before the network call → the provider response arrived later →
+the registry transaction did not prove the key was still the same. Deepest cause: `state` — account
+availability is evidence tied to a credential version, not merely to a project/provider pair.
+**Action:** key replacement/removal now atomically invalidates registry verification; sync locks the
+provider-key row and compares its encrypted value before writing. Catalog reads also have a fail-safe
+timeout and streaming 5 MB cap.
+**Preventive action:** every future provider probe must bind its result to the credential version that
+started it; an account change always requires a fresh probe before experiment eligibility.
+
 ## 2026-07-18 — Route optimizer expanded into an agent-workflow improvement workspace
 **What happened:** The approved v1 could optimize manually named gateway Routes, but the user clarified
 that Blindspot must first connect to an already-built agent, discover its workflows/nodes, retain data

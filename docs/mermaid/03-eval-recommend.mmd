@@ -1,7 +1,9 @@
 %% Blindspot — eval + recommend (PRD §3, §6): back-test a candidate then propose a swap
+%% files: apps/gateway/src/manage/eval.ts, packages/core/src/eval/queue.ts, packages/core/src/eval/runner.ts, packages/core/src/policy.ts
+%% granularity: full
 flowchart TD
-  T["Trigger<br/>FUNCTION · add candidate OR run eval OR (Phase 5) version bump"]:::fn
-  Q{"REDIS_URL set?<br/>FUNCTION"}:::dec
+  T["Trigger<br/>FUNCTION · explicit paid-run approval OR (Phase 5) version bump"]:::fn
+  Q{"BLINDSPOT_EVAL_MODE=inline<br/>OR REDIS_URL absent?<br/>FUNCTION"}:::dec
   EN["Enqueue eval job<br/>DATA · BullMQ bs:evals"]:::data
   IN["Run inline (dev)<br/>FUNCTION"]:::fn
   RUN["runEval: for each active golden example<br/>FUNCTION · loop"]:::fn
@@ -17,8 +19,8 @@ flowchart TD
   STOP["No recommendation<br/>FUNCTION · none warranted"]:::term
 
   T --> Q
-  Q -- "yes" --> EN --> RUN
-  Q -- "no" --> IN --> RUN
+  Q -- "no" --> EN --> RUN
+  Q -- "yes" --> IN --> RUN
   RUN --> CAND --> JUDGE --> AGG --> POL
   POL -- "no" --> STOP
   POL -- "yes" --> DUP

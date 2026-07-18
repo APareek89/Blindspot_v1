@@ -18,6 +18,12 @@ const TABLE: Record<string, { in: number; out: number }> = {
   "openai:gpt-4o": { in: 2.5, out: 10.0 },
 };
 
+/** Published input/output USD per million tokens, or null when not maintained yet. */
+export function pricePerMillion(modelRef: string): { input: number; output: number } | null {
+  const price = TABLE[modelRef];
+  return price ? { input: price.in, output: price.out } : null;
+}
+
 /** Estimate cost in USD **cents** for a call, or null if the model is unpriced. */
 export function estimateCostCents(
   modelRef: string,

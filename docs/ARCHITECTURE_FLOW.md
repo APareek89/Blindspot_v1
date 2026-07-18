@@ -1,8 +1,9 @@
 # Blindspot — Architecture Flow
 
-> **Status: Phases 0–7 verified live; Phase 7A Connect + Observe built 2026-07-18.** The original
-> loop + dashboard run against Groq + Supabase; the new SDK/ingestion/workflow path is implemented
-> and awaits the first gstpilot connection. Pending: Phase 4.5 (per-example
+> **Status: Phases 0–7 verified live; Phases 7A–7B built 2026-07-18.** The original
+> loop + dashboard run against Groq + Supabase; the SDK/ingestion/workflow path plus the
+> account-scoped model registry and node compatibility gate are implemented and await the first
+> gstpilot connection. Pending: Phase 4.5 / 7C (per-example
 > outputs → fill evidence samples/perCriterion) and Phase 8 (queue scale, observability,
 > rate limits). These diagrams describe the *real* runtime; update the `.mmd` in the same
 > session as any structural change — the git diff of the `.mmd` IS the change highlight.
@@ -10,7 +11,8 @@
 > `node /Users/anandpareek/.claude/skills/power-coding/scripts/build-html.mjs docs/mermaid docs/architecture-flow.html`
 >
 > **Diagrams:** `00` master loop · `01` build decisions · `02` golden sets · `03` eval→recommend ·
-> `04` drift→gate · `05` dashboard + management API · **`06` Connect + Observe**.
+> `04` drift→gate · `05` dashboard + management API · `06` Connect + Observe ·
+> **`07` Model Registry + Compatibility**.
 
 ## Legend
 | Label | Meaning |
@@ -31,6 +33,9 @@
 | CI Gate | FUNCTION | regressing candidate vs bar → block the change |
 | Content retention | USER + FUNCTION | effective mode is the stricter of SDK and project (`metadata` default) |
 | Workflow selection | USER | discovery is observe-only until `workflows.selected = true` |
+| Provider availability | FUNCTION | read-only account catalog sync; no inference/token spend |
+| Technical compatibility | FUNCTION | key/access plus modality, tool, schema, streaming, system and context requirements |
+| Eval spend | USER | adding a candidate spends nothing; Phase 7C estimates and asks before a paid run |
 
 ## Master flow — Observe → Eval → Recommend → Approve → Route → Gate
 ```mermaid
@@ -42,7 +47,7 @@ flowchart TD
   E["Decrypt user provider key<br/>FUNCTION · AES-256-GCM<br/>in: provider_keys.encrypted_key · out: in-memory key"]:::fn
   F["Live LLM call through user key<br/>LIBRARY · Vercel AI SDK adapter<br/>in: prompt + model_ref · out: completion"]:::data
   G["Write trace<br/>DATA · traces · cost, latency, output"]:::data
-  H["Enqueue eval run, async<br/>LIBRARY · BullMQ on Redis"]:::data
+  H["Dispatch an explicitly approved eval<br/>FUNCTION · inline local override or BullMQ on Redis"]:::data
   I["Judge scores golden set<br/>AGENT · JUDGE_MODEL<br/>in: outputs vs golden_examples · out: per-criterion scores"]:::agent
   J["Aggregate avg_score, cost, latency<br/>FUNCTION · writes DATA · eval_runs"]:::fn
   K{"Drift? new score below route band<br/>FUNCTION · new below old minus margin"}:::dec
@@ -111,6 +116,37 @@ flowchart TD
   classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
 ```
 
+## Registry + compatibility — show only technically viable choices
+
+Provider onboarding is project-scoped and BYO-key based. Settings calls the provider's read-only
+model-list endpoint, validates the bounded response, normalizes its capability facts, and stores
+account availability in `model_registry`. The first prototype deliberately exposes only Claude
+Sonnet 4.6 and Haiku 4.5; Hugging Face and Fireworks use the same adapter contract but remain out
+of the experiment picker until their capability evidence is strong enough.
+
+For a route linked to an observed agent node, Blindspot compares each exposed model with the
+strictest requirements seen for that node. A model is eligible only when provider access is
+verified and every known requirement fits. Unknown facts are shown as “needs verification,” and
+hard mismatches are excluded with the exact reason. The same check runs again server-side when a
+candidate is added. Candidate creation spends no eval budget and never changes `live_model`.
+
+```mermaid
+flowchart LR
+  SYNC["USER · Sync provider"]:::ask --> LIST["FUNCTION · list models<br/>zero inference tokens"]:::fn
+  LIST --> REG["DATA · model_registry<br/>availability + capabilities"]:::data
+  REQ["DATA · observed node requirements"]:::data --> MATCH{"FUNCTION · technical match?"}:::dec
+  REG --> MATCH
+  MATCH -- "yes" --> ELIGIBLE["Eligible experiment model"]:::data
+  MATCH -- "no / unknown" --> EXCLUDED["Excluded + reasons"]:::data
+  ELIGIBLE --> ADD["USER · add candidate"]:::ask --> GUARD["FUNCTION · server re-check"]:::fn
+  GUARD --> SAFE["DATA · candidate only<br/>no eval spend · live unchanged"]:::data
+
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+```
+
 ## File index (stage → file)
 | Stage | Diagram file |
 |---|---|
@@ -121,3 +157,4 @@ flowchart TD
 | Drift + CI gate | [`docs/mermaid/04-drift-gate.mmd`](./mermaid/04-drift-gate.mmd) |
 | Dashboard + management | [`docs/mermaid/05-dashboard-mgmt.mmd`](./mermaid/05-dashboard-mgmt.mmd) |
 | Connect + Observe | [`docs/mermaid/06-connect-observe.mmd`](./mermaid/06-connect-observe.mmd) |
+| Model Registry + Compatibility | [`docs/mermaid/07-model-registry-compatibility.mmd`](./mermaid/07-model-registry-compatibility.mmd) |

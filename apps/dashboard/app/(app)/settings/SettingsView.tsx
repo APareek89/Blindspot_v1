@@ -3,21 +3,34 @@
 import { useState, useTransition } from "react";
 import { Copy } from "@/components/Copy";
 import { dateTime } from "@/lib/format";
-import { PROVIDERS, type GatewayKey, type ProviderKey, type Settings } from "@/lib/types";
-import { deleteProviderKeyA, mintKeyA, setProviderKeyA } from "./actions";
+import {
+  PROVIDERS,
+  type GatewayKey,
+  type ModelRegistryOverview,
+  type ProviderKey,
+  type Settings,
+} from "@/lib/types";
+import {
+  deleteProviderKeyA,
+  mintKeyA,
+  setProviderKeyA,
+  syncModelRegistryA,
+} from "./actions";
 
 export function SettingsView({
   providerKeys,
   gatewayKeys,
   settings,
+  registry,
 }: {
   providerKeys: ProviderKey[];
   gatewayKeys: GatewayKey[];
   settings: Settings;
+  registry: ModelRegistryOverview;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<string>("groq");
+  const [provider, setProvider] = useState<string>("anthropic");
   const [value, setValue] = useState("");
   const [minted, setMinted] = useState<string | null>(null);
 
@@ -110,6 +123,60 @@ export function SettingsView({
         </div>
       </div>
 
+      {/* zero-token model discovery */}
+      <div className="card">
+        <div className="row between wrap" style={{ marginBottom: 4 }}>
+          <span className="card-title">Model registry</span>
+          <span className="badge cyan">0 inference tokens</span>
+        </div>
+        <div className="card-sub" style={{ marginBottom: 14 }}>
+          Sync the models available to each BYO account. The first prototype exposes only Claude
+          Sonnet 4.6 and Haiku 4.5 to experiments; HF and Fireworks remain wired for later.
+        </div>
+        <div className="card pad-0">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Access</th>
+                <th className="num">Available</th>
+                <th>Last sync</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {registry.providers.map((item) => (
+                <tr key={item.provider}>
+                  <td style={{ fontWeight: 550 }}>{item.provider}</td>
+                  <td>
+                    <span className={`badge ${item.keyConfigured ? "pass" : "warn"}`}>
+                      {item.keyConfigured ? "Key configured" : "Needs key"}
+                    </span>
+                  </td>
+                  <td className="num mono">{item.modelCount}</td>
+                  <td className="muted small">
+                    {item.lastSyncedAt ? dateTime(item.lastSyncedAt) : "Never"}
+                  </td>
+                  <td className="num">
+                    <button
+                      className="btn sm"
+                      disabled={pending || !item.keyConfigured}
+                      onClick={() => run(() => syncModelRegistryA(item.provider))}
+                    >
+                      {pending ? "Syncing…" : "Sync models"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="hint">
+          Sync verifies account access and provider-declared capabilities. It does not call a model
+          or spend evaluation budget.
+        </div>
+      </div>
+
       {/* gateway keys */}
       <div className="card">
         <div className="row between" style={{ marginBottom: 4 }}>
@@ -164,7 +231,7 @@ export function SettingsView({
         <div className="card-title" style={{ marginBottom: 14 }}>
           Cost caps &amp; config
         </div>
-        <div className="grid cols-3">
+        <div className="grid cols-2">
           <div className="card">
             <div className="kpi-label">Cost cap / eval run</div>
             <div className="kpi-value" style={{ fontSize: 20 }}>
@@ -185,6 +252,15 @@ export function SettingsView({
               {settings.judgeModel ?? "—"}
             </div>
             <div className="kpi-foot">scores golden sets</div>
+          </div>
+          <div className="card">
+            <div className="kpi-label">Eval execution</div>
+            <div className="mono" style={{ marginTop: 8, fontSize: 13 }}>
+              {settings.evalMode}
+            </div>
+            <div className="kpi-foot">
+              {settings.evalMode === "inline" ? "Redis bypassed locally" : "BullMQ worker"}
+            </div>
           </div>
         </div>
         <div className="hint">These are set in the gateway environment and shown read-only here.</div>

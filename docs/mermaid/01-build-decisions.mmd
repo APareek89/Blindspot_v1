@@ -1,5 +1,7 @@
 %% Blindspot — BUILD DECISIONS LOG (not a runtime flow)
 %% Records WHAT was chosen at each phase and WHY. Updated every phase; newest at bottom.
+%% files: Blindspot-PRD.md, Handoff.MD, packages/core/src/model-registry.ts, packages/core/src/eval/queue.ts
+%% granularity: summary
 flowchart TD
   P0["Phase 0 · Monorepo skeleton — DONE"]:::done
   P0c["pnpm + Turborepo · Hono gateway · tsx dev · internal packages export raw .ts<br/>WHY: one toolchain, no dev build step, instant HMR; Hono is tiny and edge-portable so the<br/>gateway can later run as N stateless instances (PRD §8)"]:::why
@@ -25,7 +27,7 @@ flowchart TD
 
   P3["Phase 3 · Eval engine (LLM-as-judge) — DONE"]:::done
   P3a["judgeOutput via generateObject (schema-validated verdict); runEval scores every active<br/>golden example then persists an eval_runs row<br/>WHY: reproducible, structured scores; the aggregate row is what policy + drift read"]:::why
-  P3b["enqueueEval: BullMQ when REDIS_URL is set, else run inline<br/>WHY: PRD §8 decouples eval to workers, but the loop stays demoable with no Redis in dev"]:::why
+  P3b["enqueueEval: BLINDSPOT_EVAL_MODE=inline explicitly bypasses Redis; otherwise BullMQ<br/>when REDIS_URL is set, inline when absent<br/>WHY: local work can pause Redis without changing production queue wiring"]:::why
 
   P4["Phase 4 · Recommendations + approvals — DONE"]:::done
   P4a["Policy = cheapest candidate with latest score >= bar AND cheaper than live; emits a<br/>Recommendation with evidence (scores + cost/latency deltas)<br/>WHY: PRD §3 — evidence-backed proposal, dedup pending recs per target"]:::why
@@ -44,6 +46,10 @@ flowchart TD
   P7Aa["Observe-only TypeScript SDK + authenticated batch ingestion; metadata-only default<br/>WHY: connect an existing agent without forcing it through Blindspot routing or retaining content"]:::why
   P7Ab["Workflow/node hierarchy links generation nodes to existing Routes; user selects workflows<br/>WHY: compatibility and optimization are node-specific, and discovery must not imply permission to change"]:::why
   P7Ac["Claude Sonnet 4.6 vs Haiku 4.5 first; HF + Fireworks adapters remain pluggable<br/>WHY: prove the end-to-end decision with gstpilot before widening the catalog"]:::why
+  P7B["Phase 7B · Registry + Compatibility — DONE"]:::done
+  P7Ba["Read-only provider catalog sync stores project-scoped account availability + normalized<br/>capabilities; listing consumes zero inference tokens<br/>WHY: expose only models the user's own account can actually access"]:::why
+  P7Bb["Observed node requirements deterministically gate Sonnet/Haiku; excluded models carry reasons<br/>WHY: technical fit permits an experiment, while quality and spend remain separate later gates"]:::why
+  P7Bc["Adding a compatible candidate does not run an eval or change live_model<br/>WHY: Phase 7C must estimate cost and obtain explicit spend approval before paid work"]:::why
 
   P0 --> P0c --> P0d --> P05
   P05 --> P05c --> P05d --> P05e --> P1
@@ -51,7 +57,7 @@ flowchart TD
   P2 --> P2a --> P2b --> P2c --> P3
   P3 --> P3a --> P3b --> P3fix --> P4
   P4 --> P4a --> P4b --> P4c --> P5
-  P5 --> P5a --> P5b --> DONE --> P7 --> P7A --> P7Aa --> P7Ab --> P7Ac
+  P5 --> P5a --> P5b --> DONE --> P7 --> P7A --> P7Aa --> P7Ab --> P7Ac --> P7B --> P7Ba --> P7Bb --> P7Bc
 
   classDef done fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef wip fill:#fef9c3,stroke:#ca8a04,color:#3f2d00;

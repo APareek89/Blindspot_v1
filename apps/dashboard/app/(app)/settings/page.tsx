@@ -7,10 +7,11 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const client = await requireApi();
   try {
-    const [pk, gk, settings] = await Promise.all([
+    const [pk, gk, settings, registry] = await Promise.all([
       client.listProviderKeys(),
       client.listGatewayKeys(),
       client.settings(),
+      client.modelRegistry(),
     ]);
     return (
       <>
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
           providerKeys={pk.provider_keys}
           gatewayKeys={gk.keys}
           settings={settings}
+          registry={registry}
         />
       </>
     );

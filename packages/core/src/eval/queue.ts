@@ -5,7 +5,18 @@ import { runEval, type EvalJob, type EvalResult } from "./runner";
 
 let queue: Queue<EvalJob> | null = null;
 
+export function evalExecutionMode(): "inline" | "queued" {
+  const configured = process.env.BLINDSPOT_EVAL_MODE?.trim().toLowerCase();
+  if (configured === "inline") return "inline";
+  if (configured && configured !== "queued") {
+    // Unknown overrides fail safe: do not contact a retained remote Redis URL because of a typo.
+    return "inline";
+  }
+  return process.env.REDIS_URL ? "queued" : "inline";
+}
+
 function getQueue(): Queue<EvalJob> | null {
+  if (evalExecutionMode() === "inline") return null;
   const url = process.env.REDIS_URL;
   if (!url) return null;
   if (!queue) {
@@ -21,8 +32,8 @@ export type EnqueueResult =
   | { mode: "inline"; result: EvalResult };
 
 /**
- * Enqueue an eval run to the worker when REDIS_URL is set (PRD §8 decoupled workers),
- * otherwise run it inline — so the whole loop is demoable without Redis in dev.
+ * Enqueue when Redis is enabled, otherwise run inline. BLINDSPOT_EVAL_MODE=inline is an
+ * explicit local override so a retained REDIS_URL cannot accidentally leave the laptop.
  */
 export async function enqueueEval(job: EvalJob): Promise<EnqueueResult> {
   const q = getQueue();

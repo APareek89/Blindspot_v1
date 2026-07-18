@@ -24,5 +24,9 @@ metaRouter.get("/settings", async (c) => {
     costCapUsdPerEvalRun: cap > 0 ? cap : null,
     defaultModel: process.env.BLINDSPOT_DEFAULT_MODEL ?? null,
     judgeModel: process.env.JUDGE_MODEL ?? null,
+    evalMode:
+      process.env.BLINDSPOT_EVAL_MODE === "inline" || !process.env.REDIS_URL
+        ? "inline"
+        : "queued",
   });
 });

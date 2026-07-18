@@ -32,6 +32,21 @@ export async function deleteProviderKeyA(provider: string): Promise<Result> {
   return { ok: true };
 }
 
+export async function syncModelRegistryA(
+  provider: "anthropic" | "hf" | "fireworks",
+): Promise<Result> {
+  const client = await requireApi();
+  try {
+    await client.syncModelRegistry(provider);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/settings");
+  revalidatePath("/routes");
+  revalidatePath("/workflows");
+  return { ok: true };
+}
+
 /** Mint a new gateway key. The raw key is returned ONCE — the caller must show + discard it. */
 export async function mintKeyA(): Promise<{ ok: true; key: string } | { ok: false; error: string }> {
   const client = await requireApi();

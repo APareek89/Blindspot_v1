@@ -1,13 +1,18 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
-import { generateRecommendation, runEval, type EvalJob } from "@blindspot/core";
+import {
+  evalExecutionMode,
+  generateRecommendation,
+  runEval,
+  type EvalJob,
+} from "@blindspot/core";
 import { EVAL_QUEUE, hasEnv, loadRootEnv } from "@blindspot/shared";
 
 loadRootEnv(import.meta.url);
 
-if (!hasEnv("REDIS_URL")) {
+if (evalExecutionMode() === "inline" || !hasEnv("REDIS_URL")) {
   console.log(
-    `[worker] REDIS_URL not set — idle (dev runs evals inline via the gateway). Set REDIS_URL to consume "${EVAL_QUEUE}".`,
+    `[worker] inline eval mode — idle (gateway runs evals in-process). Set BLINDSPOT_EVAL_MODE=queued with REDIS_URL to consume "${EVAL_QUEUE}".`,
   );
 } else {
   const connection = new IORedis(process.env.REDIS_URL as string, {

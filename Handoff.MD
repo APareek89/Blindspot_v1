@@ -1,30 +1,28 @@
 # Handoff.MD — Blindspot
-> last-synced: 6b36614 · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
+> last-synced: a9cf51b · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
 > Continue with: **Refer to Handoff.MD in `/Users/anandpareek/Documents/Projects/Blindspot_v1` and begin**
 
 ## Current state
-- ✅ Shipped through Phase 7: gateway, eval/recommend/approve/drift loop, golden lifecycle and dashboard (history: git log + Learning.MD).
-- ✅ **Phase 7A Connect + Observe built:** `@blindspot/sdk` → authenticated `/v1/ingest/spans` → workflow/node/execution/span tables → environment-scoped Routes → Workflows selection UI.
-- ✅ Data controls: `metadata` default, `inputs`, `full`; server applies stricter of project/SDK, redacts credential fields, downgrades >900 KB spans to metadata, bounded one retry.
-- ✅ Claude-first prototype catalog: Sonnet 4.6 vs Haiku 4.5. HF adapter retained; Fireworks OpenAI-compatible adapter + encrypted BYO key wiring added.
-- ✅ Migration `0001_panoramic_reptil.sql` applied to configured dev Postgres. Typecheck (8 packages), production dashboard build, 7/7 Mermaid validation and real SDK→gateway→DB probe pass.
-- ✅ Probe discovered synthetic `gstpilot` nodes (`intake` Haiku; `sonnet-generation` Sonnet/tools) and proved metadata policy stored no content. Test projects/keys removed.
-- ✅ Local `.env`: Anthropic and Postgres copied from `creative-QC-agent/.env.local` and verified; Redis command normalized to a TLS URL and verified; Blindspot's own encryption key preserved.
-- ⚠️ In-app browser bootstrap fails in this desktop session (`Cannot redefine property: process`); rendered click-through not claimed.
+- ✅ Shipped through Phase 7; **7A Connect + Observe** and **7B Registry + Compatibility** are built locally.
+- ✅ SDK ingest → workflow/node/execution/span tables → environment-scoped Routes; capture is user-selected (`metadata` default) and workflow optimization is explicit/observe-only by default.
+- ✅ Project-scoped `model_registry`: read-only Anthropic/HF/Fireworks adapters, normalized capabilities/pricing/access, Sonnet 4.6 vs Haiku 4.5 picker, exact eligible/excluded reasons and server-side candidate guard.
+- ✅ Candidate addition spends nothing and never changes `live_model`; direct eval buttons are disabled until Phase 7C presents an estimate + explicit budget approval.
+- ✅ Provider-key replacement/removal invalidates prior catalog verification; in-flight sync locks/rechecks key version; responses have timeout + streaming 5 MB cap.
+- ✅ Migration `0002_moaning_sinister_six.sql` applied to dev Postgres. Real Anthropic GET probe: 10 discovered, 2 prototype models, 0 inference tokens; synthetic compatibility/selection/live-model gates pass and test rows are removed.
+- ✅ `pnpm typecheck`, production build and 8/8 Mermaid validation pass. Local `BLINDSPOT_EVAL_MODE=inline` bypasses Redis even while its URL remains configured.
+- ⚠️ In-app browser bootstrap still fails (`Cannot redefine property: process`); compiled UI verified, click-through not claimed.
 
 ## Decisions (approved 2026-07-18)
-- Existing agent connects observe-only through SDK/OTel or through gateway for controlled routing; env vars configure identity but do not magically transmit telemetry.
-- User explicitly selects discovered workflows and capture level. Discovery never grants permission to change a model.
-- Technical compatibility permits experiments; golden-set quality permits recommendations; every live swap remains approval-gated.
-- Full eval cost is estimated first. If the user cap is lower, propose a disclosed reproducible stratified sample; never silently sample or overspend.
-- Start Claude Sonnet 4.6 vs Haiku 4.5; keep HF + Fireworks pluggable. Active implementation repo is private `APareek89/Blindspot_v1`.
+- Discovery, content capture, experiment eligibility and live-model approval are separate permissions. Technical compatibility permits an experiment; golden quality permits a Recommendation; the user approves every swap.
+- Full eval cost is estimated first. Below-full caps use a disclosed reproducible stratified sample; never silently sample or overspend.
+- Claude Sonnet 4.6 vs Haiku 4.5 is the prototype picker; HF + Fireworks stay pluggable. Redis is intentionally bypassed locally until Monday.
 
 ## Pending — wait for user OK between checkpoints
-- 🧑 USER: review Phase 7A diff. Next approved checkpoint is **7B Model Registry + Compatibility** (Anthropic account model sync, node requirements, capability probe, compatible/excluded reasons).
-- 🧑 USER before live gstpilot run: rotate the Redis credential in Upstash and update both projects; a malformed-URL diagnostic exposed the old credential in local session output. Do not paste the replacement in chat.
-- 🤖 Phase 7A FMEA: 0 P0; P1 backlog — batch/schedule ingestion + per-project rate limit, dropped-span/DLQ visibility, bounded workflow-history aggregates/N+1 removal.
-- 🤖 Phase 7C: per-example eval evidence, cost estimator + stratified sampling, live-trace golden suggestions. Phase 7D: continuous eval/drift simulation/approval application.
+- 🧑 USER: review Phase 7B. Next checkpoint after OK is **7C Quality + Experiment**: context import, golden lifecycle growth, per-example issues/evidence, cost estimator and transparent stratified sampling.
+- 🧑 USER before Redis/live gstpilot use: rotate the exposed Upstash credential and update both projects; never paste the replacement in chat.
+- 🤖 Phase 7B FMEA at `a9cf51b` + worktree: 0 P0; P1 — add per-project registry-sync rate limit/cooldown and replace the legacy raw eval API with Phase 7C server-side spend authorization. P2 — provider retry/backoff, registry freshness TTL, bulk upserts/limited registry pagination, persistent regression tests.
+- 🤖 Phase 7A P1 backlog remains: batched/scheduled ingest rate limits, dropped-span/DLQ visibility, bounded workflow-history aggregates/N+1 removal. Phase 7D is continuous eval/drift simulation/debug/approval application.
 - 🔒 Loop stays `off`; no paid model/eval calls without explicit estimated-cost approval.
 
 ## Run
-`set -a; . ./.env; set +a` · migration: `pnpm --filter @blindspot/db db:push` · gateway: `pnpm start:gateway` (:8787) · dashboard: `pnpm start:dashboard` (:3001) · verify: `pnpm typecheck && pnpm build`.
+`set -a; . ./.env; set +a` · migrate: `pnpm --filter @blindspot/db db:push` · gateway `pnpm start:gateway` (:8787) · dashboard `pnpm start:dashboard` (:3001) · verify `pnpm typecheck && pnpm build`.

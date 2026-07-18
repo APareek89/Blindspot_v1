@@ -6,7 +6,8 @@ import { generateText } from "ai";
 import type { ChatMessage, Provider } from "@blindspot/shared";
 import { estimateCostCents } from "./prices";
 
-export { estimateCostCents, costPer1kCents } from "./prices";
+export { estimateCostCents, costPer1kCents, pricePerMillion } from "./prices";
+export * from "./registry";
 
 export interface ModelRef {
   provider: Provider;

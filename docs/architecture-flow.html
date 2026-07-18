@@ -14,6 +14,8 @@
 <h2>Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate</h2>
 <pre class="mermaid">%% Blindspot — master flow: Observe -&gt; Eval -&gt; Recommend -&gt; Approve -&gt; Route -&gt; Gate
 %% BUILT &amp; verified live 2026-07-16 (Groq + Supabase). Dashboard surface: see 05-dashboard-mgmt.mmd.
+%% files: apps/gateway/src/index.ts, packages/core/src/eval/queue.ts, packages/core/src/eval/runner.ts, packages/core/src/policy.ts, packages/core/src/approvals.ts
+%% granularity: summary
 flowchart TD
   A["User agent call&lt;br/&gt;ENTRY · base_url points to gateway, model = route:name"]:::term
   B["Resolve route to approved live_model&lt;br/&gt;FUNCTION&lt;br/&gt;in: route:name · out: concrete model_ref"]:::fn
@@ -22,7 +24,7 @@ flowchart TD
   E["Decrypt user provider key&lt;br/&gt;FUNCTION · AES-256-GCM&lt;br/&gt;in: provider_keys.encrypted_key · out: in-memory key"]:::fn
   F["Live LLM call through user key&lt;br/&gt;LIBRARY · Vercel AI SDK adapter&lt;br/&gt;in: prompt + model_ref · out: completion"]:::data
   G["Write trace&lt;br/&gt;DATA · traces · cost, latency, output"]:::data
-  H["Enqueue eval run, async&lt;br/&gt;LIBRARY · BullMQ on Redis"]:::data
+  H["Dispatch an explicitly approved eval&lt;br/&gt;FUNCTION · inline local override or BullMQ on Redis&lt;br/&gt;in: authorized run · out: eval job"]:::data
   I["Judge scores golden set&lt;br/&gt;AGENT · JUDGE_MODEL&lt;br/&gt;in: outputs vs golden_examples · out: per-criterion scores"]:::agent
   J["Aggregate avg_score, cost, latency&lt;br/&gt;FUNCTION · writes DATA · eval_runs"]:::fn
   K{"Drift? new score below route band&lt;br/&gt;FUNCTION · new below old minus margin"}:::dec
@@ -58,6 +60,8 @@ flowchart TD
 <h2>Blindspot — BUILD DECISIONS LOG (not a runtime flow)</h2>
 <pre class="mermaid">%% Blindspot — BUILD DECISIONS LOG (not a runtime flow)
 %% Records WHAT was chosen at each phase and WHY. Updated every phase; newest at bottom.
+%% files: Blindspot-PRD.md, Handoff.MD, packages/core/src/model-registry.ts, packages/core/src/eval/queue.ts
+%% granularity: summary
 flowchart TD
   P0["Phase 0 · Monorepo skeleton — DONE"]:::done
   P0c["pnpm + Turborepo · Hono gateway · tsx dev · internal packages export raw .ts&lt;br/&gt;WHY: one toolchain, no dev build step, instant HMR; Hono is tiny and edge-portable so the&lt;br/&gt;gateway can later run as N stateless instances (PRD §8)"]:::why
@@ -83,7 +87,7 @@ flowchart TD
 
   P3["Phase 3 · Eval engine (LLM-as-judge) — DONE"]:::done
   P3a["judgeOutput via generateObject (schema-validated verdict); runEval scores every active&lt;br/&gt;golden example then persists an eval_runs row&lt;br/&gt;WHY: reproducible, structured scores; the aggregate row is what policy + drift read"]:::why
-  P3b["enqueueEval: BullMQ when REDIS_URL is set, else run inline&lt;br/&gt;WHY: PRD §8 decouples eval to workers, but the loop stays demoable with no Redis in dev"]:::why
+  P3b["enqueueEval: BLINDSPOT_EVAL_MODE=inline explicitly bypasses Redis; otherwise BullMQ&lt;br/&gt;when REDIS_URL is set, inline when absent&lt;br/&gt;WHY: local work can pause Redis without changing production queue wiring"]:::why
 
   P4["Phase 4 · Recommendations + approvals — DONE"]:::done
   P4a["Policy = cheapest candidate with latest score &gt;= bar AND cheaper than live; emits a&lt;br/&gt;Recommendation with evidence (scores + cost/latency deltas)&lt;br/&gt;WHY: PRD §3 — evidence-backed proposal, dedup pending recs per target"]:::why
@@ -102,6 +106,10 @@ flowchart TD
   P7Aa["Observe-only TypeScript SDK + authenticated batch ingestion; metadata-only default&lt;br/&gt;WHY: connect an existing agent without forcing it through Blindspot routing or retaining content"]:::why
   P7Ab["Workflow/node hierarchy links generation nodes to existing Routes; user selects workflows&lt;br/&gt;WHY: compatibility and optimization are node-specific, and discovery must not imply permission to change"]:::why
   P7Ac["Claude Sonnet 4.6 vs Haiku 4.5 first; HF + Fireworks adapters remain pluggable&lt;br/&gt;WHY: prove the end-to-end decision with gstpilot before widening the catalog"]:::why
+  P7B["Phase 7B · Registry + Compatibility — DONE"]:::done
+  P7Ba["Read-only provider catalog sync stores project-scoped account availability + normalized&lt;br/&gt;capabilities; listing consumes zero inference tokens&lt;br/&gt;WHY: expose only models the user's own account can actually access"]:::why
+  P7Bb["Observed node requirements deterministically gate Sonnet/Haiku; excluded models carry reasons&lt;br/&gt;WHY: technical fit permits an experiment, while quality and spend remain separate later gates"]:::why
+  P7Bc["Adding a compatible candidate does not run an eval or change live_model&lt;br/&gt;WHY: Phase 7C must estimate cost and obtain explicit spend approval before paid work"]:::why
 
   P0 --&gt; P0c --&gt; P0d --&gt; P05
   P05 --&gt; P05c --&gt; P05d --&gt; P05e --&gt; P1
@@ -109,7 +117,7 @@ flowchart TD
   P2 --&gt; P2a --&gt; P2b --&gt; P2c --&gt; P3
   P3 --&gt; P3a --&gt; P3b --&gt; P3fix --&gt; P4
   P4 --&gt; P4a --&gt; P4b --&gt; P4c --&gt; P5
-  P5 --&gt; P5a --&gt; P5b --&gt; DONE --&gt; P7 --&gt; P7A --&gt; P7Aa --&gt; P7Ab --&gt; P7Ac
+  P5 --&gt; P5a --&gt; P5b --&gt; DONE --&gt; P7 --&gt; P7A --&gt; P7Aa --&gt; P7Ab --&gt; P7Ac --&gt; P7B --&gt; P7Ba --&gt; P7Bb --&gt; P7Bc
 
   classDef done fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef wip fill:#fef9c3,stroke:#ca8a04,color:#3f2d00;
@@ -145,9 +153,11 @@ flowchart TD
 </pre>
 <h2>Blindspot — eval + recommend (PRD §3, §6): back-test a candidate then propose a swap</h2>
 <pre class="mermaid">%% Blindspot — eval + recommend (PRD §3, §6): back-test a candidate then propose a swap
+%% files: apps/gateway/src/manage/eval.ts, packages/core/src/eval/queue.ts, packages/core/src/eval/runner.ts, packages/core/src/policy.ts
+%% granularity: full
 flowchart TD
-  T["Trigger&lt;br/&gt;FUNCTION · add candidate OR run eval OR (Phase 5) version bump"]:::fn
-  Q{"REDIS_URL set?&lt;br/&gt;FUNCTION"}:::dec
+  T["Trigger&lt;br/&gt;FUNCTION · explicit paid-run approval OR (Phase 5) version bump"]:::fn
+  Q{"BLINDSPOT_EVAL_MODE=inline&lt;br/&gt;OR REDIS_URL absent?&lt;br/&gt;FUNCTION"}:::dec
   EN["Enqueue eval job&lt;br/&gt;DATA · BullMQ bs:evals"]:::data
   IN["Run inline (dev)&lt;br/&gt;FUNCTION"]:::fn
   RUN["runEval: for each active golden example&lt;br/&gt;FUNCTION · loop"]:::fn
@@ -163,8 +173,8 @@ flowchart TD
   STOP["No recommendation&lt;br/&gt;FUNCTION · none warranted"]:::term
 
   T --&gt; Q
-  Q -- "yes" --&gt; EN --&gt; RUN
-  Q -- "no" --&gt; IN --&gt; RUN
+  Q -- "no" --&gt; EN --&gt; RUN
+  Q -- "yes" --&gt; IN --&gt; RUN
   RUN --&gt; CAND --&gt; JUDGE --&gt; AGG --&gt; POL
   POL -- "no" --&gt; STOP
   POL -- "yes" --&gt; DUP
@@ -307,6 +317,52 @@ flowchart TD
   classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
   classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
   classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+</pre>
+<h2>Blindspot — provider registry + node compatibility gate (Phase 7B)</h2>
+<pre class="mermaid">%% Blindspot — provider registry + node compatibility gate (Phase 7B)
+%% files: packages/providers/src/registry.ts, packages/core/src/model-registry.ts, apps/gateway/src/manage/model-registry.ts, packages/db/src/schema.ts, apps/dashboard/app/(app)/settings/SettingsView.tsx, apps/dashboard/app/(app)/routes/[name]/RouteDetailView.tsx
+%% granularity: full
+flowchart TD
+  SYNC["Sync models&lt;br/&gt;USER · chooses provider"]:::ask
+  AUTH["Authenticate project&lt;br/&gt;FUNCTION · bs_live key hash"]:::fn
+  KEY{"Encrypted BYO provider key exists?&lt;br/&gt;FUNCTION"}:::dec
+  DECRYPT["Decrypt key in memory&lt;br/&gt;FUNCTION · AES-256-GCM"]:::fn
+  CATALOG["List account-visible models&lt;br/&gt;FUNCTION · provider read-only endpoint&lt;br/&gt;bounded timeout + 5 MB response · zero inference tokens"]:::fn
+  VALIDATE["Validate catalog with Zod&lt;br/&gt;FUNCTION&lt;br/&gt;normalize capabilities + availability + pricing"]:::fn
+  REG["Upsert account-scoped registry&lt;br/&gt;DATA · model_registry&lt;br/&gt;unseen prior rows become unavailable"]:::data
+  REQ["Strictest observed node requirements&lt;br/&gt;DATA · workflow_nodes.requirements_json"]:::data
+  SELECT{"Workflow selected for optimization?&lt;br/&gt;USER · default false"}:::ask
+  ALLOW["Prototype allowlist&lt;br/&gt;FUNCTION · Claude Sonnet 4.6 + Haiku 4.5"]:::fn
+  ACCESS{"Provider key + account access verified?&lt;br/&gt;FUNCTION"}:::dec
+  MATCH{"Modalities, tools, structured output,&lt;br/&gt;streaming, system messages and context fit?&lt;br/&gt;FUNCTION · deterministic"}:::dec
+  ELIGIBLE["Eligible model&lt;br/&gt;DATA · technical pass + price/capability evidence"]:::data
+  EXCLUDED["Excluded model with exact reasons&lt;br/&gt;DATA · needs key, needs verification or incompatible"]:::data
+  ADD["Add experiment candidate&lt;br/&gt;USER"]:::ask
+  GUARD["Re-run server-side compatibility gate&lt;br/&gt;FUNCTION · arbitrary raw refs rejected"]:::fn
+  POOL["Candidate stored; back-test not started&lt;br/&gt;DATA · candidates&lt;br/&gt;zero eval spend · live_model unchanged"]:::data
+  QUALITY["Phase 7C: estimate + user-approved eval&lt;br/&gt;then golden-set quality gate"]:::term
+  APPROVAL["Phase 7D: evidence-backed Recommendation&lt;br/&gt;USER approves before any live swap"]:::term
+  OBSERVE["Remain observe-only&lt;br/&gt;DATA · no experiment or route change"]:::term
+  FAIL["Return sanitized sync error&lt;br/&gt;FUNCTION · no secret/provider body exposed"]:::term
+
+  SYNC --&gt; AUTH --&gt; KEY
+  KEY -- "no" --&gt; FAIL
+  KEY -- "yes" --&gt; DECRYPT --&gt; CATALOG --&gt; VALIDATE --&gt; REG
+  CATALOG -.-&gt;|"timeout, HTTP, size or shape failure"| FAIL
+  REG --&gt; ACCESS
+  REQ --&gt; SELECT
+  SELECT -- "no" --&gt; OBSERVE
+  SELECT -- "yes" --&gt; ALLOW --&gt; ACCESS
+  ACCESS -- "no" --&gt; EXCLUDED
+  ACCESS -- "yes" --&gt; MATCH
+  MATCH -- "no or unknown" --&gt; EXCLUDED
+  MATCH -- "yes" --&gt; ELIGIBLE --&gt; ADD --&gt; GUARD --&gt; POOL --&gt; QUALITY --&gt; APPROVAL
+
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
 </pre>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";

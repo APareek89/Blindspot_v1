@@ -177,6 +177,81 @@ export interface Settings {
   costCapUsdPerEvalRun: number | null;
   defaultModel: string | null;
   judgeModel: string | null;
+  evalMode: "inline" | "queued";
+}
+
+export interface ModelCapabilities {
+  inputModalities: string[];
+  outputModalities: string[];
+  toolCalling: boolean | null;
+  structuredOutput: boolean | null;
+  streaming: boolean | null;
+  systemMessages: boolean | null;
+  contextTokens: number | null;
+  maxOutputTokens: number | null;
+}
+
+export type CompatibilityStatus =
+  | "compatible"
+  | "needs_verification"
+  | "needs_provider_key"
+  | "incompatible"
+  | "eval_failed";
+
+export interface ModelCompatibility {
+  modelRef: string;
+  provider: "anthropic" | "hf" | "fireworks";
+  displayName: string;
+  status: CompatibilityStatus;
+  reasons: string[];
+  capabilities: ModelCapabilities;
+  inputUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  lastSyncedAt: string | null;
+}
+
+export interface RouteModelCompatibility {
+  route: { id: string; name: string; liveModel: string | null };
+  workflow: {
+    id: string;
+    name: string;
+    selected: boolean;
+    nodeId: string;
+    nodeName: string;
+  } | null;
+  optimizationAllowed: boolean;
+  optimizationBlockedReason: string | null;
+  requirements: {
+    inputModalities: string[];
+    outputModalities: string[];
+    toolCalling: boolean;
+    structuredOutput: boolean;
+    streaming: boolean;
+    systemMessages: boolean;
+    minContextTokens?: number;
+  };
+  eligible: ModelCompatibility[];
+  excluded: ModelCompatibility[];
+}
+
+export interface ModelRegistryOverview {
+  providers: Array<{
+    provider: "anthropic" | "hf" | "fireworks";
+    keyConfigured: boolean;
+    modelCount: number;
+    verifiedCount: number;
+    lastSyncedAt: string | null;
+  }>;
+  models: Array<{
+    id: string;
+    provider: string;
+    modelRef: string;
+    displayName: string;
+    availability: "available" | "unavailable" | "deprecated";
+    capabilities: ModelCapabilities;
+    probeStatus: "unverified" | "verified" | "failed";
+    lastSyncedAt: string;
+  }>;
 }
 
 export interface WorkflowSummary {
