@@ -11,3 +11,4 @@ export * from "./routes/service";
 export * from "./overview";
 export * from "./project";
 export * from "./config-check";
+export * from "./workflows";

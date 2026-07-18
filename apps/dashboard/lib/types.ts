@@ -5,6 +5,7 @@ export type RouteStatus = "healthy" | "at_risk" | "unevaluated";
 export type GoldenOrigin = "upload" | "agent" | "grown";
 export type GoldenLabel = "pass" | "fail" | "unlabeled";
 export type RecStatus = "pending" | "approved" | "rejected";
+export type CaptureMode = "metadata" | "inputs" | "full";
 
 export interface Policy {
   type: "cheapest_passing";
@@ -178,6 +179,48 @@ export interface Settings {
   judgeModel: string | null;
 }
 
+export interface WorkflowSummary {
+  id: string;
+  projectId: string;
+  name: string;
+  framework: string | null;
+  language: string | null;
+  environment: string;
+  selected: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  nodeCount: number;
+  executionCount: number;
+}
+
+export interface WorkflowNodeDetail {
+  id: string;
+  routeId: string | null;
+  name: string;
+  kind: "agent" | "generation" | "tool" | "retrieval" | "function";
+  latestModel: string | null;
+  requirements: {
+    inputModalities: string[];
+    outputModalities: string[];
+    toolCalling: boolean;
+    structuredOutput: boolean;
+    streaming: boolean;
+    systemMessages: boolean;
+    minContextTokens?: number;
+  };
+  firstSeenAt: string;
+  lastSeenAt: string;
+  spanCount: number;
+  avgLatencyMs: number | null;
+  totalCostCents: number;
+  errorCount: number;
+}
+
+export interface WorkflowDetail {
+  workflow: WorkflowSummary;
+  nodes: WorkflowNodeDetail[];
+}
+
 /** Providers the gateway can route to (mirrors @blindspot/shared PROVIDERS). */
 export const PROVIDERS = [
   "anthropic",
@@ -185,6 +228,7 @@ export const PROVIDERS = [
   "gemini",
   "groq",
   "hf",
+  "fireworks",
   "openrouter",
   "together",
   "ollama",

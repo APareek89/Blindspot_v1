@@ -6,6 +6,28 @@
 
 <!-- Newest first. Entry format: -->
 
+## 2026-07-18 — Route optimizer expanded into an agent-workflow improvement workspace
+**What happened:** The approved v1 could optimize manually named gateway Routes, but the user clarified
+that Blindspot must first connect to an already-built agent, discover its workflows/nodes, retain data
+only by user choice, and offer only technically compatible model experiments.
+**Why chain:** routes were flat → because the gateway only saw model calls → because no SDK/OTel span
+hierarchy existed → because the initial PRD optimized routing before workflow discovery. Deepest why:
+`design` — the product unit expanded from a call-site to workflow → node → route.
+**Action:** added a provider-agnostic SDK/ingestion contract, workflow hierarchy, explicit selection and
+capture controls, environment-scoped route linking, and documented technical-vs-behavioral compatibility.
+**Preventive action:** every future connector must emit the same Zod span contract; model eligibility is
+always per node, and discovery/capture/changes remain three separate user permissions.
+
+## 2026-07-18 — One-shot DB verification scripts did not exit automatically
+**What happened:** the first synthetic end-to-end probe hung before starting the gateway even though its
+database inserts completed.
+**Why chain:** command substitution waited → the `tsx` process stayed alive → the Postgres client kept an
+open socket → the one-shot script did not explicitly terminate it. Deepest why: `process` lifecycle.
+**Action:** terminated only the test PIDs, removed the temporary project, then made every one-shot DB probe
+call `process.exit(0)` after completion. The rerun passed and cleaned up.
+**Preventive action:** repository CLIs should expose a shared graceful DB close; until then, ephemeral
+verification scripts must explicitly exit and always clean test projects by a unique `user_id`.
+
 ## 2026-07-16 — Adding the dashboard: pnpm `allowBuilds` + Next server-only key handling
 **What happened:** (1) Every `pnpm --filter @blindspot/dashboard <script>` aborted with
 `ERR_PNPM_IGNORED_BUILDS: sharp` before the script even ran. (2) Design decision on where the

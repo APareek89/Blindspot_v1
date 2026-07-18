@@ -39,7 +39,11 @@ flowchart TD
   P5b["CI gate: POST /gate re-evals a model → 200 if score >= bar, 422 if it regresses (CI fails)<br/>WHY: a regressing model/prompt change can't reach prod (PRD §5)"]:::why
 
   DONE["✅ Backend loop VERIFIED LIVE end-to-end (Groq + live Postgres):<br/>connect → route → trace → golden(agent) → eval(judge) → recommend → approve → live swap;<br/>drift detected; gate blocked a sub-bar model with 422"]:::done
-  P7["Phase 7 · Dashboard (Next.js §10) — NEXT"]:::wip
+  P7["Phase 7 · Dashboard (Next.js §10) — DONE"]:::done
+  P7A["Phase 7A · Connect + Observe — DONE"]:::done
+  P7Aa["Observe-only TypeScript SDK + authenticated batch ingestion; metadata-only default<br/>WHY: connect an existing agent without forcing it through Blindspot routing or retaining content"]:::why
+  P7Ab["Workflow/node hierarchy links generation nodes to existing Routes; user selects workflows<br/>WHY: compatibility and optimization are node-specific, and discovery must not imply permission to change"]:::why
+  P7Ac["Claude Sonnet 4.6 vs Haiku 4.5 first; HF + Fireworks adapters remain pluggable<br/>WHY: prove the end-to-end decision with gstpilot before widening the catalog"]:::why
 
   P0 --> P0c --> P0d --> P05
   P05 --> P05c --> P05d --> P05e --> P1
@@ -47,7 +51,7 @@ flowchart TD
   P2 --> P2a --> P2b --> P2c --> P3
   P3 --> P3a --> P3b --> P3fix --> P4
   P4 --> P4a --> P4b --> P4c --> P5
-  P5 --> P5a --> P5b --> DONE --> P7
+  P5 --> P5a --> P5b --> DONE --> P7 --> P7A --> P7Aa --> P7Ab --> P7Ac
 
   classDef done fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef wip fill:#fef9c3,stroke:#ca8a04,color:#3f2d00;

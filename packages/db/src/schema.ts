@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Evidence, Policy } from "@blindspot/shared";
+import type { CaptureMode, Evidence, NodeRequirements, Policy } from "@blindspot/shared";
 
 // Blindspot lives in its own Postgres schema so it never collides with (or introspects)
 // other tables in a shared database. drizzle.config sets schemaFilter to match.
@@ -41,10 +41,25 @@ export const providerName = bs.enum("provider_name", [
   "gemini",
   "groq",
   "hf",
+  "fireworks",
   "openrouter",
   "together",
   "ollama",
 ]);
+export const captureMode = bs.enum("capture_mode", ["metadata", "inputs", "full"]);
+export const workflowNodeKind = bs.enum("workflow_node_kind", [
+  "agent",
+  "generation",
+  "tool",
+  "retrieval",
+  "function",
+]);
+export const workflowExecutionStatus = bs.enum("workflow_execution_status", [
+  "running",
+  "completed",
+  "error",
+]);
+export const workflowSpanStatus = bs.enum("workflow_span_status", ["ok", "error"]);
 
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -54,6 +69,8 @@ export const projects = bs.table("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
   name: text("name").notNull(),
+  /** Content retention is a user decision; metadata-only is the privacy-safe default. */
+  captureMode: captureMode("capture_mode").$type<CaptureMode>().notNull().default("metadata"),
   createdAt: createdAt(),
 });
 
@@ -211,4 +228,103 @@ export const traces = bs.table(
     createdAt: createdAt(),
   },
   (t) => [index("traces_route_idx").on(t.routeId)],
+);
+
+// --- agent-workflow observability ---------------------------------------
+// These tables preserve the workflow/node hierarchy that a flat gateway trace cannot express.
+// Generation nodes link to the existing Route object so the current eval/approval loop is reused.
+export const workflows = bs.table(
+  "workflows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    framework: text("framework"),
+    language: text("language"),
+    environment: text("environment").notNull().default("production"),
+    /** Discovered workflows are inert until the user selects them for optimization. */
+    selected: boolean("selected").notNull().default(false),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("workflows_project_name_env_idx").on(t.projectId, t.name, t.environment),
+    index("workflows_project_last_seen_idx").on(t.projectId, t.lastSeenAt),
+  ],
+);
+
+export const workflowNodes = bs.table(
+  "workflow_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    routeId: uuid("route_id").references(() => routes.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    kind: workflowNodeKind("kind").notNull().default("generation"),
+    latestModel: text("latest_model"),
+    requirementsJson: jsonb("requirements_json").$type<NodeRequirements>().notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("workflow_nodes_workflow_name_idx").on(t.workflowId, t.name)],
+);
+
+export const workflowExecutions = bs.table(
+  "workflow_executions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    sessionId: text("session_id"),
+    status: workflowExecutionStatus("status").notNull().default("running"),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("workflow_executions_workflow_external_idx").on(t.workflowId, t.externalId),
+    index("workflow_executions_workflow_started_idx").on(t.workflowId, t.startedAt),
+  ],
+);
+
+export const workflowSpans = bs.table(
+  "workflow_spans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    executionId: uuid("execution_id")
+      .notNull()
+      .references(() => workflowExecutions.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => workflowNodes.id, { onDelete: "cascade" }),
+    traceId: uuid("trace_id").references(() => traces.id, { onDelete: "set null" }),
+    externalId: text("external_id").notNull(),
+    parentExternalId: text("parent_external_id"),
+    model: text("model"),
+    status: workflowSpanStatus("status").notNull().default("ok"),
+    captureMode: captureMode("capture_mode").$type<CaptureMode>().notNull(),
+    inputJson: jsonb("input_json"),
+    outputJson: jsonb("output_json"),
+    inputBytes: integer("input_bytes"),
+    outputBytes: integer("output_bytes"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costCents: real("cost_cents"),
+    latencyMs: integer("latency_ms"),
+    error: text("error"),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("workflow_spans_execution_external_idx").on(t.executionId, t.externalId),
+    index("workflow_spans_node_created_idx").on(t.nodeId, t.createdAt),
+  ],
 );

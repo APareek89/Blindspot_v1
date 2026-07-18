@@ -97,7 +97,11 @@ flowchart TD
   P5b["CI gate: POST /gate re-evals a model → 200 if score &gt;= bar, 422 if it regresses (CI fails)&lt;br/&gt;WHY: a regressing model/prompt change can't reach prod (PRD §5)"]:::why
 
   DONE["✅ Backend loop VERIFIED LIVE end-to-end (Groq + live Postgres):&lt;br/&gt;connect → route → trace → golden(agent) → eval(judge) → recommend → approve → live swap;&lt;br/&gt;drift detected; gate blocked a sub-bar model with 422"]:::done
-  P7["Phase 7 · Dashboard (Next.js §10) — NEXT"]:::wip
+  P7["Phase 7 · Dashboard (Next.js §10) — DONE"]:::done
+  P7A["Phase 7A · Connect + Observe — DONE"]:::done
+  P7Aa["Observe-only TypeScript SDK + authenticated batch ingestion; metadata-only default&lt;br/&gt;WHY: connect an existing agent without forcing it through Blindspot routing or retaining content"]:::why
+  P7Ab["Workflow/node hierarchy links generation nodes to existing Routes; user selects workflows&lt;br/&gt;WHY: compatibility and optimization are node-specific, and discovery must not imply permission to change"]:::why
+  P7Ac["Claude Sonnet 4.6 vs Haiku 4.5 first; HF + Fireworks adapters remain pluggable&lt;br/&gt;WHY: prove the end-to-end decision with gstpilot before widening the catalog"]:::why
 
   P0 --&gt; P0c --&gt; P0d --&gt; P05
   P05 --&gt; P05c --&gt; P05d --&gt; P05e --&gt; P1
@@ -105,7 +109,7 @@ flowchart TD
   P2 --&gt; P2a --&gt; P2b --&gt; P2c --&gt; P3
   P3 --&gt; P3a --&gt; P3b --&gt; P3fix --&gt; P4
   P4 --&gt; P4a --&gt; P4b --&gt; P4c --&gt; P5
-  P5 --&gt; P5a --&gt; P5b --&gt; DONE --&gt; P7
+  P5 --&gt; P5a --&gt; P5b --&gt; DONE --&gt; P7 --&gt; P7A --&gt; P7Aa --&gt; P7Ab --&gt; P7Ac
 
   classDef done fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef wip fill:#fef9c3,stroke:#ca8a04,color:#3f2d00;
@@ -263,6 +267,41 @@ flowchart TD
   U -.-&gt; DEC
   DEC -.-&gt; REUSE
 
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+</pre>
+<h2>Blindspot — Connect + Observe workflow discovery (Phase 7A)</h2>
+<pre class="mermaid">%% Blindspot — Connect + Observe workflow discovery (Phase 7A)
+%% files: packages/sdk/src/index.ts, apps/gateway/src/manage/workflows.ts, packages/core/src/workflows.ts, packages/db/src/schema.ts, apps/dashboard/app/(app)/workflows/page.tsx, apps/dashboard/app/(app)/connect/page.tsx
+%% granularity: full
+flowchart TD
+  APP["Existing agent model call&lt;br/&gt;FUNCTION&lt;br/&gt;in: application request · out: model result"]:::term
+  SDK["Blindspot SDK wrapper&lt;br/&gt;FUNCTION · 900 KB cap, bounded one retry&lt;br/&gt;terminal status emitted at the real request boundary&lt;br/&gt;in: node, model, usage, optional content · out: queued span or metadata fallback"]:::fn
+  CAP{"Effective capture mode&lt;br/&gt;FUNCTION · stricter of SDK and project&lt;br/&gt;metadata, inputs, or full"}:::dec
+  API["POST /v1/ingest/spans&lt;br/&gt;FUNCTION · auth, 1 MB cap, Zod batch max 100&lt;br/&gt;in: spans + bs_live key · out: accepted ids"]:::fn
+  REDACT["Credential-field redaction&lt;br/&gt;FUNCTION&lt;br/&gt;in: permitted payload · out: safe payload"]:::fn
+  WF["Upsert workflow and execution&lt;br/&gt;DATA · workflows + workflow_executions&lt;br/&gt;out: discovered workflow"]:::data
+  NODE["Upsert node and strictest observed requirements&lt;br/&gt;DATA · workflow_nodes&lt;br/&gt;out: node + capability requirements"]:::data
+  GEN{"Generation node with provider:model?&lt;br/&gt;FUNCTION"}:::dec
+  ROUTE["Link first-seen generation to environment-scoped Route&lt;br/&gt;FUNCTION + DATA · routes + candidates&lt;br/&gt;existing live model never changed"]:::fn
+  SPAN["Store node observation&lt;br/&gt;DATA · workflow_spans&lt;br/&gt;tokens, cost, latency, error, permitted content"]:::data
+  TRACE["Mirror generation into eval trace&lt;br/&gt;DATA · traces&lt;br/&gt;out: promote/eval-compatible trace"]:::data
+  UI["Workflows dashboard&lt;br/&gt;FUNCTION&lt;br/&gt;in: discovered nodes · out: observable flow and metrics"]:::fn
+  SELECT{"User selects workflow for optimization?&lt;br/&gt;USER · default observe-only"}:::ask
+  READY["Selected workflow becomes eligible for model experiments&lt;br/&gt;DATA · workflows.selected = true"]:::term
+  OBSERVE["Remain observe-only&lt;br/&gt;DATA · no model or route changes"]:::term
+
+  APP --&gt; SDK --&gt; CAP --&gt; API --&gt; REDACT --&gt; WF --&gt; NODE --&gt; GEN
+  GEN -- "yes" --&gt; ROUTE --&gt; SPAN --&gt; TRACE --&gt; UI
+  GEN -- "no" --&gt; SPAN
+  SPAN --&gt; UI --&gt; SELECT
+  SELECT -- "yes" --&gt; READY
+  SELECT -- "no" --&gt; OBSERVE
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
   classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
   classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;

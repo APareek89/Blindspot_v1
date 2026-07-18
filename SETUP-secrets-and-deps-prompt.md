@@ -25,14 +25,18 @@ STEP 1 — Environment check (do this first, no waiting):
 STEP 2 — Scaffold the env files:
 - Create `.env.example` (blank values) and `.env` (git-ignored — verify it's in .gitignore,
   add it if not) with EXACTLY these keys, grouped with comments:
-    # --- providers (BYO keys; enable at least one) ---
+    # --- providers (Claude-first; HF + Fireworks optional candidates) ---
     ANTHROPIC_API_KEY=
     OPENAI_API_KEY=
     GEMINI_API_KEY=
     GROQ_API_KEY=
     HF_TOKEN=
-    # --- eval judge (reuse one of the above, e.g. gemini-1.5-flash or claude-haiku) ---
+    FIREWORKS_API_KEY=
+    FIREWORKS_BASE_URL=
+    # --- model policy ---
     JUDGE_MODEL=
+    BLINDSPOT_DEFAULT_MODEL=
+    GOLDEN_MODEL=
     # --- data + cache ---
     DATABASE_URL=
     REDIS_URL=
@@ -44,23 +48,26 @@ STEP 2 — Scaffold the env files:
     COST_CAP_USD_PER_EVAL_RUN=1
 
 STEP 3 — Walk me through each credential, in this order, waiting after each:
-  1. GEMINI_API_KEY  → aistudio.google.com/apikey ("Create API key"). FREE tier. Best cheap
-     judge + panelist. (Recommended default JUDGE_MODEL=gemini-1.5-flash.)
-  2. ANTHROPIC_API_KEY → console.anthropic.com → API Keys → Create. (Claude Haiku = great judge.)
-  3. GROQ_API_KEY → console.groq.com/keys. FREE tier, very fast Llama — good cheap candidate.
-  4. HF_TOKEN → huggingface.co/settings/tokens → "New token" (Read). FREE. Enables open
+  1. ANTHROPIC_API_KEY → console.anthropic.com → API Keys → Create. Required for the
+     Claude-first Sonnet 4.6 vs Haiku 4.5 prototype.
+  2. HF_TOKEN → huggingface.co/settings/tokens → "New token" (Read). FREE. Enables open
      models via the HF Inference API.
-  5. OPENAI_API_KEY → platform.openai.com/api-keys (optional, only if I want GPT candidates).
-  6. DATABASE_URL (Postgres) → EITHER Supabase (supabase.com → new project → Settings →
+  3. FIREWORKS_API_KEY → fireworks.ai → Account → API Keys. Optional candidate provider.
+  4. GEMINI_API_KEY → aistudio.google.com/apikey (optional future candidate/judge).
+  5. GROQ_API_KEY → console.groq.com/keys (optional future candidate).
+  6. OPENAI_API_KEY → platform.openai.com/api-keys (optional future candidate).
+  7. DATABASE_URL (Postgres) → EITHER Supabase (supabase.com → new project → Settings →
      Database → Connection string, "URI", use the pooled port 6543) OR Render Postgres OR
      Neon. FREE tier on all three. Paste the full postgres:// URL.
-  7. REDIS_URL → Upstash (upstash.com → create Redis → copy the `rediss://` URL) OR Render
+  8. REDIS_URL → Upstash (upstash.com → create Redis → copy the `rediss://` URL) OR Render
      Key Value. FREE tier. Used for the queue + cache.
-  8. ENCRYPTION_KEY → generate it FOR me locally (do not ask me): run
+  9. ENCRYPTION_KEY → generate it FOR me locally (do not ask me): run
      `openssl rand -hex 32`, write the output to ENCRYPTION_KEY in `.env`, confirm "saved ✓".
      (This encrypts users' stored provider keys at rest.)
-  9. SENTRY_DSN (optional) → sentry.io → new project → copy DSN. FREE tier.
- 10. Set JUDGE_MODEL for me to `gemini-1.5-flash` unless I say otherwise.
+ 10. SENTRY_DSN (optional) → sentry.io → new project → copy DSN. FREE tier.
+ 11. Set JUDGE_MODEL to `anthropic:claude-haiku-4-5-20251001`,
+     BLINDSPOT_DEFAULT_MODEL to `anthropic:claude-sonnet-4-6`, and GOLDEN_MODEL to
+     `anthropic:claude-sonnet-4-6` unless I say otherwise.
 
 STEP 4 — Provision the free infra (only what needs an account), asking before each:
 - If I don't yet have Postgres/Redis, walk me through creating the free Supabase project and
@@ -93,8 +100,9 @@ Start with STEP 1 now.
 
 | Secret | What it's for | Where | Free? |
 |---|---|---|---|
-| `GEMINI_API_KEY` | judge + cheap candidate | aistudio.google.com/apikey | ✅ |
-| `ANTHROPIC_API_KEY` | Claude candidates + Haiku judge | console.anthropic.com | pay-as-you-go (cheap) |
+| `ANTHROPIC_API_KEY` | Sonnet candidate + Haiku judge | console.anthropic.com | pay-as-you-go |
+| `FIREWORKS_API_KEY` | hosted open-model candidates | fireworks.ai | plan-dependent |
+| `GEMINI_API_KEY` | optional future judge/candidate | aistudio.google.com/apikey | ✅ |
 | `GROQ_API_KEY` | fast/cheap Llama candidate | console.groq.com/keys | ✅ |
 | `HF_TOKEN` | open models via HF Inference API | huggingface.co/settings/tokens | ✅ |
 | `OPENAI_API_KEY` | GPT candidates (optional) | platform.openai.com/api-keys | pay-as-you-go |
@@ -103,4 +111,5 @@ Start with STEP 1 now.
 | `ENCRYPTION_KEY` | encrypt users' stored provider keys | `openssl rand -hex 32` | ✅ |
 | `SENTRY_DSN` | error monitoring (optional) | sentry.io | ✅ |
 
-**Tip:** you only need **one** provider key to start (Gemini is the cheapest/fastest to get and doubles as the judge). Add the others as the main build reaches the catalog step.
+**Tip:** you only need `ANTHROPIC_API_KEY` for the first Claude-only prototype. Add HF and
+Fireworks when the compatibility registry is ready to expose eligible open-model candidates.

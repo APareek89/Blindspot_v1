@@ -8,6 +8,7 @@ const PROVIDER_ENV: Record<Provider, string | null> = {
   gemini: "GEMINI_API_KEY",
   groq: "GROQ_API_KEY",
   hf: "HF_TOKEN",
+  fireworks: "FIREWORKS_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
   together: "TOGETHER_API_KEY",
   ollama: null, // local, no key

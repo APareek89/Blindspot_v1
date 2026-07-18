@@ -19,6 +19,7 @@ import { golden } from "./manage/golden";
 import { keysRouter } from "./manage/keys";
 import { metaRouter } from "./manage/meta";
 import { routesRouter } from "./manage/routes";
+import { workflowsRouter } from "./manage/workflows";
 import { resolveOrCreateRoute } from "./route-resolver";
 import type { Env } from "./types";
 
@@ -46,6 +47,7 @@ app.route("/v1", golden);
 app.route("/v1", evalRouter);
 app.route("/v1", approvals);
 app.route("/v1", driftRouter);
+app.route("/v1", workflowsRouter);
 
 /**
  * OpenAI-compatible chat completions (PRD §1, §12 Phase 1).
@@ -62,7 +64,7 @@ app.post("/v1/chat/completions", async (c) => {
 
   // resolve route:<name> → the approved live model (auto-create on first sight)
   const defaultModel =
-    process.env.BLINDSPOT_DEFAULT_MODEL ?? "anthropic:claude-3-5-haiku-latest";
+    process.env.BLINDSPOT_DEFAULT_MODEL ?? "anthropic:claude-sonnet-4-6";
   let modelRef = body.model;
   let routeId: string | null = null;
   if (body.model.startsWith(ROUTE_PREFIX)) {

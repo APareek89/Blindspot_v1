@@ -7,11 +7,97 @@ export const PROVIDERS = [
   "gemini",
   "groq",
   "hf",
+  "fireworks",
   "openrouter",
   "together",
   "ollama",
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
+
+/** How much application content Blindspot may retain for a project. */
+export const CaptureModeSchema = z.enum(["metadata", "inputs", "full"]);
+export type CaptureMode = z.infer<typeof CaptureModeSchema>;
+
+/** The kinds of steps that can appear in an agentic workflow trace. */
+export const WorkflowNodeKindSchema = z.enum([
+  "agent",
+  "generation",
+  "tool",
+  "retrieval",
+  "function",
+]);
+export type WorkflowNodeKind = z.infer<typeof WorkflowNodeKindSchema>;
+
+export const WorkflowSpanStatusSchema = z.enum(["ok", "error"]);
+export type WorkflowSpanStatus = z.infer<typeof WorkflowSpanStatusSchema>;
+
+/** Requirements observed at a node. The compatibility engine will match models to these. */
+export const NodeRequirementsSchema = z
+  .object({
+    inputModalities: z.array(z.enum(["text", "image", "audio", "video"])).default(["text"]),
+    outputModalities: z.array(z.enum(["text", "image", "audio"])).default(["text"]),
+    toolCalling: z.boolean().default(false),
+    structuredOutput: z.boolean().default(false),
+    streaming: z.boolean().default(false),
+    systemMessages: z.boolean().default(false),
+    minContextTokens: z.number().int().nonnegative().optional(),
+  })
+  .default({});
+export type NodeRequirements = z.infer<typeof NodeRequirementsSchema>;
+
+const JsonRecordSchema = z.record(z.unknown());
+
+/** One SDK observation. Batches are capped again at the HTTP boundary. */
+export const WorkflowSpanInputSchema = z.object({
+  workflow: z.object({
+    name: z.string().trim().min(1).max(120),
+    framework: z.string().trim().max(80).optional(),
+    language: z.string().trim().max(40).optional(),
+    environment: z.string().trim().min(1).max(40).default("production"),
+  }),
+  execution: z.object({
+    id: z.string().trim().min(1).max(200),
+    sessionId: z.string().trim().max(200).optional(),
+    status: z.enum(["running", "completed", "error"]).optional(),
+    startedAt: z.string().datetime().optional(),
+    endedAt: z.string().datetime().optional(),
+    metadata: JsonRecordSchema.optional(),
+  }),
+  span: z.object({
+    id: z.string().trim().min(1).max(200),
+    parentId: z.string().trim().max(200).optional(),
+    node: z.string().trim().min(1).max(160),
+    kind: WorkflowNodeKindSchema.default("generation"),
+    provider: z.string().trim().max(40).optional(),
+    model: z.string().trim().max(200).optional(),
+    startedAt: z.string().datetime().optional(),
+    endedAt: z.string().datetime().optional(),
+    status: WorkflowSpanStatusSchema.default("ok"),
+    latencyMs: z.number().int().nonnegative().optional(),
+    inputTokens: z.number().int().nonnegative().optional(),
+    outputTokens: z.number().int().nonnegative().optional(),
+    costCents: z.number().nonnegative().optional(),
+    input: z.unknown().optional(),
+    output: z.unknown().optional(),
+    error: z.string().max(2_000).optional(),
+    metadata: JsonRecordSchema.optional(),
+    requirements: NodeRequirementsSchema.optional(),
+  }),
+  /** The SDK can be stricter than the project policy; the server always chooses the stricter mode. */
+  captureMode: CaptureModeSchema.default("metadata"),
+});
+export type WorkflowSpanInput = z.infer<typeof WorkflowSpanInputSchema>;
+
+export const WorkflowSpanBatchSchema = z.object({
+  spans: z.array(WorkflowSpanInputSchema).min(1).max(100),
+});
+export type WorkflowSpanBatch = z.infer<typeof WorkflowSpanBatchSchema>;
+
+export const DataControlsPatchSchema = z.object({ captureMode: CaptureModeSchema });
+export type DataControlsPatch = z.infer<typeof DataControlsPatchSchema>;
+
+export const WorkflowPatchSchema = z.object({ selected: z.boolean() });
+export type WorkflowPatch = z.infer<typeof WorkflowPatchSchema>;
 
 /**
  * Policy — the rule for the *ideal* model (PRD §2). v1 = cheapest candidate whose

@@ -18,8 +18,9 @@ const BARE_ALIASES: Record<string, string> = {
   "gemini-1.5-flash": "gemini:gemini-1.5-flash",
   "gemini-1.5-flash-8b": "gemini:gemini-1.5-flash-8b",
   "gemini-1.5-pro": "gemini:gemini-1.5-pro",
-  "claude-haiku": "anthropic:claude-3-5-haiku-latest",
-  "claude-3-5-haiku": "anthropic:claude-3-5-haiku-latest",
+  "claude-haiku": "anthropic:claude-haiku-4-5-20251001",
+  "claude-haiku-4-5": "anthropic:claude-haiku-4-5-20251001",
+  "claude-sonnet": "anthropic:claude-sonnet-4-6",
 };
 
 /** Accept either "provider:model" or a known bare name; return canonical form. */
@@ -28,7 +29,7 @@ export function normalizeModelRef(ref: string): string {
   return BARE_ALIASES[ref] ?? ref;
 }
 
-/** Parse "provider:model" (e.g. "anthropic:claude-3-5-haiku-latest"). */
+/** Parse "provider:model" (e.g. "anthropic:claude-haiku-4-5-20251001"). */
 export function parseModelRef(ref: string): ModelRef {
   const idx = ref.indexOf(":");
   if (idx === -1) {
@@ -58,6 +59,13 @@ function buildModel(ref: ModelRef, apiKey: string) {
       return createOpenAI({
         apiKey,
         baseURL: process.env.HF_BASE_URL ?? "https://router.huggingface.co/v1",
+      })(ref.model);
+    case "fireworks":
+      // Fireworks exposes an OpenAI-compatible inference endpoint.
+      return createOpenAI({
+        apiKey,
+        baseURL:
+          process.env.FIREWORKS_BASE_URL ?? "https://api.fireworks.ai/inference/v1",
       })(ref.model);
     default:
       throw new Error(`provider "${ref.provider}" is not wired yet`);

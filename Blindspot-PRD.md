@@ -1,10 +1,12 @@
 # Blindspot — PRD + Claude Code Build Guide
 
-**Version:** 1.0 · **Owner:** Anand Pareek · **Status:** Ready to build
-**One-liner:** *Blindspot is the eval-gated model & cost layer for AI agents. It runs every step of your agent on the cheapest model that still passes your quality bar, and it catches the day a provider’s new model version quietly breaks it — surfacing an **evidence-backed recommendation you approve**, never a silent switch.*
+**Version:** 1.1 · **Owner:** Anand Pareek · **Status:** Agent-workspace prototype approved 2026-07-18
+**One-liner:** *Blindspot is the improvement workspace for a built AI agent: connect any workflow, understand every model-powered node, test only technically compatible models against user-owned golden sets, and surface **evidence-backed recommendations the user approves**, never a silent switch.*
 **Why the name:** the whole product exists to reveal the **blind spot** every agent team has — the silent quality regression you can’t see until users complain.
 
-> Design reference: the two visual mockups in `../evaldrift/` (`evaldrift-product-viz.html` = interactive dashboard, `evaldrift-techno-functional-prd.html` = techno-functional one-pager) are the approved design — the product is now branded **Blindspot** (only the wordmark changes). Ask me if you want them regenerated with the new name.
+> Design reference: `docs/blindspot-agent-workspace-vision.html` in the original concept repo.
+> Runtime architecture expansion approved 2026-07-18: SDK/OTel observation, workflow discovery,
+> normalized model registry, node-level compatibility, budget-aware eval sampling.
 
 ---
 
@@ -32,6 +34,10 @@ Agent teams hard-code one model per call-site and never revisit it. Two costs fo
 | Object | Definition |
 |---|---|
 | **Route** | A named model call-site in the user’s agent (`summarizer`, `section-writer`). The unit of config + eval. |
+| **Workflow** | A discovered agentic flow (for example `gstpilot/pipeline`) containing model and deterministic nodes. Discovery is read-only until the user selects it. |
+| **Node** | One step inside a workflow. Model compatibility is evaluated per node, because a tool-using planner and a text summarizer have different requirements. |
+| **Model registry** | Provider-discovered models normalized with capability, availability, pricing, version and deprecation metadata. |
+| **Compatibility status** | `compatible`, `needs verification`, `needs provider key`, `incompatible`, or `eval failed`, with an explicit reason. |
 | **Candidate pool** | Models allowed to run a route — frontier APIs + HuggingFace/open models, chosen from the **catalog** (§5). |
 | **Policy** | The rule for the *ideal* model, e.g. “cheapest with score ≥ 0.85.” Policy produces a **recommendation**, not an automatic switch. |
 | **Golden set** | Example inputs + reference/rubric defining “good” for a route. Uploaded or agent-generated; grows over time (§7). |
@@ -53,8 +59,8 @@ This is a *stronger* product stance than silent autonomy: **evidence-backed reco
 ## 4. User journey (worked example)
 
 A user runs a LangGraph app (e.g., a lesson generator or a RAG assistant) that makes ~6 model calls per request, all hard-coded to one frontier model.
-1. **Connect** — point the app’s model client at the Blindspot gateway (`base_url` → `route:<name>`), or use the SDK.
-2. **Routes appear** — each call-site becomes a route with live cost + quality.
+1. **Connect** — add the lightweight Blindspot SDK/OTel exporter for observe-only discovery, or point the model client at the Blindspot gateway when Blindspot should control routing. Environment variables configure identity; an SDK/proxy hook sends telemetry.
+2. **Workflows appear** — users select which discovered workflow to improve; each generation node becomes an eval Route with its observed model, latency, tokens, errors and capability requirements.
 3. **Choose candidate models** from the catalog (frontier + open/HF) per route.
 4. **Give each route a golden set** — upload one, or let the **Golden Set Agent** write one (§7); set a policy.
 5. **Blindspot evals + recommends** — back-tests candidates; simple routes get a “switch to a cheap model” recommendation with proof; the user approves.
@@ -62,12 +68,17 @@ A user runs a LangGraph app (e.g., a lesson generator or a RAG assistant) that m
 
 ## 5. Model catalog & onboarding (frontier + HuggingFace + BYO keys)
 
-**The catalog = “models on the platform to choose from.”** A browsable menu, per route, spanning:
-- **A · Frontier APIs** — Anthropic, OpenAI, Gemini, Groq (by key).
+**The catalog = “models on the platform to choose from.”** A provider sync discovers models, then Blindspot normalizes and verifies them. The experiment selector defaults to technically compatible models; an “Excluded” view explains every omitted model. Spans:
+- **A · Frontier APIs** — first prototype: Anthropic Claude Sonnet 4.6 vs Claude Haiku 4.5. Provider-list synchronization is account-specific.
 - **B · HuggingFace open models** — added by model id, served via the **HF Inference API** (serverless, free tier — great for eval back-testing) or **Inference Endpoints** (dedicated/autoscaling). e.g. `Qwen/Qwen2.5-7B`, `meta-llama/Llama-3.3-70B`.
-- **C · Aggregators / local** — OpenRouter/Together (one adapter → many), or Ollama/vLLM ($0 local).
+- **C · Aggregators / local** — first additional adapter: Fireworks AI; later OpenRouter/Together or Ollama/vLLM.
 
 Each catalog entry shows typical cost/quality/latency; **adding one to a route triggers a back-test on that route’s golden set**, so the score shown is real for *that task*.
+
+**Compatibility is two gates:** (1) technical eligibility checks modality, tool calling,
+structured output, streaming, context, adapter and account access; (2) behavioral eligibility
+requires the model to pass that node's golden-set quality bar. A technical pass permits an
+experiment, never a live swap.
 
 **Access model (who pays the provider):**
 - **BYO keys (v1 — build this):** the user stores their own provider keys (encrypted at rest); Blindspot routes through them. Zero markup, user controls spend, simplest. Providers are **pluggable adapters** behind one interface.
@@ -88,9 +99,18 @@ The golden set is a **living asset**, not a one-time upload. Per route:
 
 **Why it matters:** most eval tools make you hand-build the set and it rots. Blindspot’s upload-optional + agent-authored + production-grown loop is a genuine differentiator and removes the biggest reason teams skip evals.
 
+### 7a. DECISION BAKED IN — transparent eval budgets and sampling
+
+Before a paid run, Blindspot estimates the full cost from selected golden examples × selected
+models × repetitions × measured/estimated tokens (candidate calls plus judge calls). The user sets
+the spend cap. If the cap is below the full-run estimate, Blindspot proposes a reproducible
+stratified sample: preserve must-pass and known-failure cases first, then edge cases, then a diverse
+representative sample from the remaining set. The UI states exactly what runs, what is omitted,
+the seed, and the confidence limitation. It never silently samples or exceeds the cap.
+
 ## 8. Architecture (scale-ready — “scales by adding instances”)
 ```
-User agent ──(gateway: base_url→route  |  SDK: @observe)──▶ BLINDSPOT GATEWAY (stateless · N instances)
+User agent ──(gateway: base_url→route | SDK/OTel: spans)──▶ BLINDSPOT GATEWAY (stateless · N instances)
                                                                 │ resolve route→approved model (policy)
                                             ┌───────────────────┼─────────────────────┐
                                             ▼                    ▼                     ▼
@@ -106,35 +126,42 @@ User agent ──(gateway: base_url→route  |  SDK: @observe)──▶ BLINDSPO
 Stateless gateway (scale by instance count) · eval runs are the bursty/slow work → decoupled into workers via a queue · idempotent jobs · DLQ · per-key rate limiting · `render.yaml` autoscaling · `/healthz` · OpenTelemetry + Sentry · **user provider keys encrypted at rest** (BYO).
 
 ## 9. Data model (Postgres)
-`projects(id, user, name)` · `routes(id, project_id, name, live_model, policy_json, auto_approve bool)` · `candidates(id, route_id, model_ref, source[api|hf|aggregator|local], enabled)` · `golden_sets(id, route_id, version, origin[upload|agent|grown])` · `golden_examples(id, golden_set_id, input, reference_output, rubric, label, active)` · `eval_runs(id, route_id, model_ref, golden_set_version, avg_score, cost_per_1k, latency_ms, created_at)` · `recommendations(id, route_id, from_model, to_model, evidence_json, status[pending|approved|rejected], created_at)` · `drift_events(id, route_id, model_ref, old_score, new_score, action)` · `provider_keys(id, project_id, provider, encrypted_key)` · `traces(id, route_id, model, input, output, cost, latency, created_at)`.
+`projects(id, user, name, capture_mode)` · `workflows(id, project_id, name, framework, environment, selected, first_seen, last_seen)` · `workflow_nodes(id, workflow_id, route_id, name, kind, latest_model, requirements_json)` · `workflow_executions(id, workflow_id, external_id, session_id, status)` · `workflow_spans(id, execution_id, node_id, model, capture_mode, input/output?, tokens, cost, latency, error)` · `routes(id, project_id, name, live_model, policy_json, auto_approve bool)` · `candidates(id, route_id, model_ref, source[api|hf|aggregator|local], enabled)` · `golden_sets(id, route_id, version, origin[upload|agent|grown])` · `golden_examples(id, golden_set_id, input, reference_output, rubric, label, active)` · `eval_runs(id, route_id, model_ref, golden_set_version, avg_score, cost_per_1k, latency_ms, created_at)` · `recommendations(id, route_id, from_model, to_model, evidence_json, status[pending|approved|rejected], created_at)` · `drift_events(id, route_id, model_ref, old_score, new_score, action)` · `provider_keys(id, project_id, provider, encrypted_key)` · `traces(id, route_id, model, input, output, cost, latency, created_at)`.
 
-## 10. COMPLETE UI/UX (build to the mockups in `../evaldrift/`, rebranded Blindspot)
+## 10. COMPLETE UI/UX (Blindspot agent-workspace design)
 Dark, data-dense, Linear/Vercel-clean. Tokens: bg `#0B0D10`, card `#14171C`, accent `#635BFF`, pass `#2FBF71`, warn `#E0A32E`, danger `#E5484D`, cyan `#3DB7C0`.
-Sidebar nav: **Overview · Routes & Models · Approvals · Drift · Golden Sets · Connect · Settings.**
+Sidebar nav: **Overview · Workflows · Routes & Models · Approvals · Drift · Golden Sets · Connect · Settings.**
 
 1. **Overview** — KPIs: *Avg quality*, *$ saved (realized)* + *$ saved (pending approval)*, *Pending approvals*, *Drift alerts*, *Routes healthy/at-risk*. Cost-vs-quality chart; activity feed.
 2. **Routes & Models** — table (route · live model · quality sparkline · cost/1k · policy · status). Click → **route detail**: candidate pool (add from catalog / remove, each with back-tested score/cost/latency/status), policy editor, per-route auto-approve toggle (default OFF), score-over-time chart with version markers.
 3. **Approvals** (the decision surface) — a queue of eval-backed **Recommendations**: “Switch `summarizer` gpt-4o-mini → gemini-flash · quality 0.87→0.86 (≥ bar) · cost −61% · [View evidence] [Approve] [Reject].” Evidence drawer: per-criterion scores, cost/latency delta, side-by-side output samples on 3 golden examples.
 4. **Drift** — timeline of version-bump events; each links to its Recommendation.
 5. **Golden Sets** (per route) — origin badge (uploaded / agent-generated / grown); a table of examples with **add / edit / delete**, label pass/fail, “generate more with agent,” “promote a production trace,” version selector; judge config; run history; CI-gate status. Empty state → “Upload a golden set (CSV/JSONL) or let Blindspot write one.”
-6. **Connect** — gateway + SDK snippets; “what happens after you connect” (4 steps).
+6. **Connect** — gateway + SDK snippets; project data controls (`metadata`, `inputs`, `full`); “what happens after you connect.”
 7. **Settings** — providers & **BYO keys** (encrypted), catalog, cost caps, CI-gate token.
 States to design: empty (no route), no-golden-set (offer upload/agent), pending-approval, drift-active, back-testing-in-progress.
 
 ## 11. `.env` / SECRETS CHECKLIST (Claude Code: print & confirm; the parallel setup session will fill it)
-**Required (v1, BYO keys — enable ≥1 provider):**
-- One or more: `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` · `GROQ_API_KEY`
-- `HF_TOKEN` — HuggingFace open models (recommended).
-- `JUDGE_MODEL` (e.g. `gemini-1.5-flash` or `claude-haiku`) — the eval judge (reuses a key above).
+**Required (Claude-first prototype):**
+- `ANTHROPIC_API_KEY` — Claude Sonnet 4.6 and Haiku 4.5.
+- `JUDGE_MODEL=anthropic:claude-haiku-4-5-20251001` — cheap Claude judge.
+- `BLINDSPOT_DEFAULT_MODEL=anthropic:claude-sonnet-4-6` — observed route fallback.
+- `GOLDEN_MODEL=anthropic:claude-sonnet-4-6` — agent-generated golden examples.
 - `DATABASE_URL` — Postgres (Supabase/Render/Neon). · `REDIS_URL` — queue + cache (Render KV/Upstash).
 - `ENCRYPTION_KEY` — 32-byte key to encrypt stored user provider keys at rest.
 
+**Optional candidate providers:** `HF_TOKEN` · `FIREWORKS_API_KEY` (adapters wired; only
+models that pass the node compatibility gate may enter an experiment).
+
 **Gateway / multi-tenant:**
-- `BLINDSPOT_GATEWAY_URL`, generated per-project `ed_live_…` keys (app-issued, not in `.env`).
+- `BLINDSPOT_GATEWAY_URL`, generated per-project `bs_live_…` keys (app-issued, not in `.env`).
 - `OAUTH_ISSUER`/`OAUTH_CLIENT_ID`/`OAUTH_CLIENT_SECRET` — only if publishing multi-tenant.
 
 **Ops (free tiers):** `SENTRY_DSN` · `OTEL_EXPORTER_OTLP_ENDPOINT` · `COST_CAP_USD_PER_EVAL_RUN`.
 > Never print secret values; provide a committed `.env.example` with blank keys.
+
+**Agent app connector:** `BLINDSPOT_API_KEY` · `BLINDSPOT_BASE_URL` ·
+`BLINDSPOT_ENVIRONMENT` · `BLINDSPOT_CAPTURE[metadata|inputs|full]`.
 
 ## 12. BUILD SEQUENCE (Claude Code: one prompt at a time, teach-as-you-go per §0b)
 **Phase 0 — Align & scaffold.** Restate architecture; print `.env` checklist; confirm the two decisions; wait for “architecture approved.” Scaffold: gateway service + dashboard (Next.js) + Postgres schema (§9) + Redis + queue + `/healthz`.
@@ -147,6 +174,12 @@ States to design: empty (no route), no-golden-set (offer upload/agent), pending-
 **Phase 7 — Dashboard.** Build §10 screens (Connect + Approvals + Golden Sets first — they carry the demo).
 **Phase 8 — Scale & observability.** Queue workers, DLQ, idempotency, rate limits, `render.yaml` autoscaling, OTel + Sentry, k6 load test, `SCALING.md`.
 **Phase 9 — Ship.** Tests + a tool/eval suite (does the judge agree with human approvals?), README + Loom, deploy to Render.
+
+**Agent-workspace prototype expansion (approved 2026-07-18; one checkpoint at a time):**
+- **Phase 7A — Connect + Observe.** TypeScript SDK, authenticated span ingestion, workflow/node discovery, workflow selection, data controls. Test shape: gstpilot.
+- **Phase 7B — Registry + Compatibility.** Anthropic model sync; Sonnet 4.6 vs Haiku 4.5; normalized capability matrix and live probes. HF + Fireworks adapters stay pluggable.
+- **Phase 7C — Quality + Experiment.** Context import, golden lifecycle, per-example outputs/issues, full cost estimate and transparent stratified sampling under a user cap.
+- **Phase 7D — Continuous loop.** Selected-node monitoring, drift simulation, debug evidence and approval-gated recommendation/application.
 
 ## 13. Success metrics
 **Portfolio:** a live demo where connecting an app → routes appear → approve a recommendation → cost drops with quality held → a simulated version bump triggers a drift recommendation. **Product:** $ saved (realized), routes under management, recommendations approved, drift caught, golden-set growth, judge-vs-human agreement.

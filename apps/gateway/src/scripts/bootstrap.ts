@@ -19,6 +19,7 @@ const PROVIDER_ENV: Array<[Provider, string]> = [
   ["gemini", "GEMINI_API_KEY"],
   ["groq", "GROQ_API_KEY"],
   ["hf", "HF_TOKEN"],
+  ["fireworks", "FIREWORKS_API_KEY"],
 ];
 
 async function main() {

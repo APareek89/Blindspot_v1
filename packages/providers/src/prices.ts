@@ -4,6 +4,8 @@
  * Money elsewhere is stored in cents, so this converts at the boundary.
  */
 const TABLE: Record<string, { in: number; out: number }> = {
+  "anthropic:claude-haiku-4-5-20251001": { in: 1.0, out: 5.0 },
+  "anthropic:claude-sonnet-4-6": { in: 3.0, out: 15.0 },
   "anthropic:claude-3-5-haiku-latest": { in: 0.8, out: 4.0 },
   "anthropic:claude-3-5-haiku-20241022": { in: 0.8, out: 4.0 },
   "anthropic:claude-3-5-sonnet-latest": { in: 3.0, out: 15.0 },

@@ -8,13 +8,16 @@ export interface CatalogEntry {
 }
 
 export const CATALOG: CatalogEntry[] = [
-  { ref: "groq:llama-3.1-8b-instant", label: "Llama 3.1 8B Instant", source: "api", note: "cheapest, fast" },
-  { ref: "groq:llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile", source: "api", note: "strong open model" },
-  { ref: "gemini:gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B", source: "api", note: "very cheap" },
-  { ref: "gemini:gemini-1.5-flash", label: "Gemini 1.5 Flash", source: "api", note: "cheap, capable" },
-  { ref: "gemini:gemini-1.5-pro", label: "Gemini 1.5 Pro", source: "api", note: "frontier" },
-  { ref: "openai:gpt-4o-mini", label: "GPT-4o mini", source: "api", note: "cheap frontier" },
-  { ref: "openai:gpt-4o", label: "GPT-4o", source: "api", note: "frontier" },
-  { ref: "anthropic:claude-3-5-haiku-latest", label: "Claude 3.5 Haiku", source: "api", note: "cheap Claude" },
-  { ref: "anthropic:claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet", source: "api", note: "frontier Claude" },
+  {
+    ref: "anthropic:claude-sonnet-4-6",
+    label: "Claude Sonnet 4.6",
+    source: "api",
+    note: "current gstpilot answer model",
+  },
+  {
+    ref: "anthropic:claude-haiku-4-5-20251001",
+    label: "Claude Haiku 4.5",
+    source: "api",
+    note: "lower-cost Claude candidate",
+  },
 ];

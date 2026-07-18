@@ -16,6 +16,9 @@ import type {
   RouteSummary,
   Settings,
   Trace,
+  CaptureMode,
+  WorkflowDetail,
+  WorkflowSummary,
 } from "./types";
 
 export const GATEWAY_URL = process.env.BLINDSPOT_GATEWAY_URL ?? "http://localhost:8787";
@@ -115,6 +118,15 @@ export function api(key: string) {
       get<{ traces: Trace[]; limit: number; offset: number }>(
         `/v1/traces${qs({ limit: p.limit, offset: p.offset, route: p.route })}`,
       ),
+
+    // discovered agentic workflows + project-level data controls
+    listWorkflows: () => get<{ workflows: WorkflowSummary[] }>("/v1/workflows"),
+    getWorkflow: (id: string) => get<WorkflowDetail>(`/v1/workflows/${id}`),
+    selectWorkflow: (id: string, selected: boolean) =>
+      send<{ workflow: WorkflowSummary }>("PATCH", `/v1/workflows/${id}`, { selected }),
+    getDataControls: () => get<{ captureMode: CaptureMode }>("/v1/data-controls"),
+    setDataControls: (captureMode: CaptureMode) =>
+      send<{ captureMode: CaptureMode }>("PATCH", "/v1/data-controls", { captureMode }),
 
     // approvals
     listRecommendations: (p: Page & { status?: string } = {}) =>

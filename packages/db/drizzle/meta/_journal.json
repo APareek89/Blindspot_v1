@@ -8,6 +8,13 @@
       "when": 1784190302606,
       "tag": "0000_oval_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784379382471,
+      "tag": "0001_panoramic_reptil",
+      "breakpoints": true
     }
   ]
 }
