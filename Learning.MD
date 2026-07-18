@@ -95,3 +95,17 @@ into BullMQ's `Worker({ connection })` was a type mismatch. Not a code bug — a
 change, but identifiers lagged.
 **Watch for later:** if you see `ed_` / `evaldrift` in generated code or the DB schema, it is a
 leak — rename to `bs_` / Blindspot. Project-issued gateway keys are `bs_live_…`.
+
+## 2026-07-18 — A Redis CLI command is not a REDIS_URL
+**What happened:** copying the source project's `REDIS_URL` made ioredis fail with `EINVAL`; its
+automatic error event included the credential-bearing connection string in diagnostic output.
+**Why chain:** the variable held a full `redis-cli --tls -u …` command → Blindspot copied the raw
+value → ioredis interpreted the command as a URL → its default unhandled-error logger printed the
+malformed target. Deepest cause: `process` — configuration was checked for presence, not shape,
+and the first verification client did not install a redacting error listener.
+**Action:** extracted only the Redis URL, promoted it to `rediss://`, stored it in Blindspot's
+git-ignored `.env`, restricted the file to mode 600, and rechecked with credential-bearing errors
+suppressed. Postgres, Redis and the Anthropic credential then validated without paid calls.
+**Preventive action:** validate URL scheme/host before constructing network clients; treat copied
+CLI snippets as user input; attach a redacting error listener before the first connection attempt.
+Rotate credentials whenever any diagnostic output contains them, even in a local session.

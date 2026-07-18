@@ -1,5 +1,5 @@
 # Handoff.MD — Blindspot
-> last-synced: 59062b2 · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
+> last-synced: 4950e69 · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
 > Continue with: **Refer to Handoff.MD in `/Users/anandpareek/Documents/Projects/Blindspot_v1` and begin**
 
 ## Current state
@@ -9,6 +9,7 @@
 - ✅ Claude-first prototype catalog: Sonnet 4.6 vs Haiku 4.5. HF adapter retained; Fireworks OpenAI-compatible adapter + encrypted BYO key wiring added.
 - ✅ Migration `0001_panoramic_reptil.sql` applied to configured dev Postgres. Typecheck (8 packages), production dashboard build, 7/7 Mermaid validation and real SDK→gateway→DB probe pass.
 - ✅ Probe discovered synthetic `gstpilot` nodes (`intake` Haiku; `sonnet-generation` Sonnet/tools) and proved metadata policy stored no content. Test projects/keys removed.
+- ✅ Local `.env`: Anthropic and Postgres copied from `creative-QC-agent/.env.local` and verified; Redis command normalized to a TLS URL and verified; Blindspot's own encryption key preserved.
 - ⚠️ In-app browser bootstrap fails in this desktop session (`Cannot redefine property: process`); rendered click-through not claimed.
 
 ## Decisions (approved 2026-07-18)
@@ -20,7 +21,7 @@
 
 ## Pending — wait for user OK between checkpoints
 - 🧑 USER: review Phase 7A diff. Next approved checkpoint is **7B Model Registry + Compatibility** (Anthropic account model sync, node requirements, capability probe, compatible/excluded reasons).
-- 🧑 USER before live gstpilot run: replace the previously invalid Anthropic key in this repo's `.env`; do not paste it in chat. `REDIS_URL` is still missing.
+- 🧑 USER before live gstpilot run: rotate the Redis credential in Upstash and update both projects; a malformed-URL diagnostic exposed the old credential in local session output. Do not paste the replacement in chat.
 - 🤖 Phase 7A FMEA: 0 P0; P1 backlog — batch/schedule ingestion + per-project rate limit, dropped-span/DLQ visibility, bounded workflow-history aggregates/N+1 removal.
 - 🤖 Phase 7C: per-example eval evidence, cost estimator + stratified sampling, live-trace golden suggestions. Phase 7D: continuous eval/drift simulation/approval application.
 - 🔒 Loop stays `off`; no paid model/eval calls without explicit estimated-cost approval.
