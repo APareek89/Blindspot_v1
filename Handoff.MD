@@ -1,5 +1,5 @@
 # Handoff.MD — Blindspot
-> last-synced: a9cf51b · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
+> last-synced: 8ec7c26 · Read this + Loop.MD at session start. Update before checkpoints and phase ends.
 > Continue with: **Refer to Handoff.MD in `/Users/anandpareek/Documents/Projects/Blindspot_v1` and begin**
 
 ## Current state
@@ -20,7 +20,7 @@
 ## Pending — wait for user OK between checkpoints
 - 🧑 USER: review Phase 7B. Next checkpoint after OK is **7C Quality + Experiment**: context import, golden lifecycle growth, per-example issues/evidence, cost estimator and transparent stratified sampling.
 - 🧑 USER before Redis/live gstpilot use: rotate the exposed Upstash credential and update both projects; never paste the replacement in chat.
-- 🤖 Phase 7B FMEA at `a9cf51b` + worktree: 0 P0; P1 — add per-project registry-sync rate limit/cooldown and replace the legacy raw eval API with Phase 7C server-side spend authorization. P2 — provider retry/backoff, registry freshness TTL, bulk upserts/limited registry pagination, persistent regression tests.
+- 🤖 Phase 7B FMEA (feature commit `8ec7c26`): 0 P0; P1 — add per-project registry-sync rate limit/cooldown and replace the legacy raw eval API with Phase 7C server-side spend authorization. P2 — provider retry/backoff, registry freshness TTL, bulk upserts/limited registry pagination, persistent regression tests.
 - 🤖 Phase 7A P1 backlog remains: batched/scheduled ingest rate limits, dropped-span/DLQ visibility, bounded workflow-history aggregates/N+1 removal. Phase 7D is continuous eval/drift simulation/debug/approval application.
 - 🔒 Loop stays `off`; no paid model/eval calls without explicit estimated-cost approval.
 
