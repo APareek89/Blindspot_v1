@@ -279,7 +279,7 @@ flowchart TD
 %% granularity: full
 flowchart TD
   APP["Existing agent model call&lt;br/&gt;FUNCTION&lt;br/&gt;in: application request · out: model result"]:::term
-  SDK["Blindspot SDK wrapper&lt;br/&gt;FUNCTION · 900 KB cap, bounded one retry&lt;br/&gt;terminal status emitted at the real request boundary&lt;br/&gt;in: node, model, usage, optional content · out: queued span or metadata fallback"]:::fn
+  SDK["Blindspot SDK wrapper&lt;br/&gt;FUNCTION · project-key/capture envs, 900 KB cap, bounded one retry&lt;br/&gt;terminal status emitted at the real request boundary&lt;br/&gt;in: node, model, usage, optional content · out: queued span or metadata fallback"]:::fn
   CAP{"Effective capture mode&lt;br/&gt;FUNCTION · stricter of SDK and project&lt;br/&gt;metadata, inputs, or full"}:::dec
   API["POST /v1/ingest/spans&lt;br/&gt;FUNCTION · auth, 1 MB cap, Zod batch max 100&lt;br/&gt;in: spans + bs_live key · out: accepted ids"]:::fn
   REDACT["Credential-field redaction&lt;br/&gt;FUNCTION&lt;br/&gt;in: permitted payload · out: safe payload"]:::fn
